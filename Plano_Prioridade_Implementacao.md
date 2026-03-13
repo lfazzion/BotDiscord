@@ -31,15 +31,18 @@
     *   Lógica de `find_or_initialize_by` e `SNAPSHOT_DEDUP_WINDOW` obrigatórios para evitar re-processamento caro em ferramentas limitadas por IP.
     *   Normalização rigorosa de `Nil vs Zero`.
 
-## 🧠 Fase 3: O Cérebro - IA Gratuita (Prioridade P1)
-*IA de ponta sem custo mensal.*
+## 🧠 Fase 3: O Cérebro - IA Híbrida (Prioridade P1)
+*IA de ponta resiliente utilizando Gemini 3.1 Flash Lite e Gemma 3 27B.*
 
-1.  **Setup Gemini 1.5 Flash (Free Tier):**
-    *   Configurar API Key do Google AI Studio.
-    *   Implementar cliente generativo para extração de insights e classificação.
-2.  **Gestão de Prompts (YAML System):**
+1.  **Arquitetura Multi-Model:**
+    *   **Gemini 3.1 Flash Lite:** Exclusivo para "Deep Mining" (Jobs em lote).
+    *   **Gemma 3 27B:** Exclusivo para "Chatbot Discord" e fallback de mineração.
+2.  **Implementação do AI Router:**
+    *   Desenvolver `AiRouter` para alternar entre modelos baseado no `type` da tarefa e cota diária restante.
+    *   Implementar contador de uso diário (500 RPD do Gemini).
+3.  **Gestão de Prompts (YAML System):**
     *   Criar diretório `config/prompts/`.
-    *   Implementar sistema de snippets reutilizáveis (ex: `nil_vs_zero.yml`, `market_context.yml`).
+    *   Garantir que os prompts sejam compatíveis com ambos os modelos (especialmente o limite de TPM do Gemma).
 3.  **Discovery Pipeline:**
     *   Job para minerar novos perfis baseados em menções e comentários.
     *   Uso do LLM para classificação prévia (concorrente, marca, irrelevante).
