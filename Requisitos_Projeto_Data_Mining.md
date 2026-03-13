@@ -1,110 +1,90 @@
 # Requisitos e Brainstorming: Sistema de Data Mining para Influencers
 
 ## 1. Visão Geral da Arquitetura
-O sistema é um **Rails 8 Headless**, focado em processamento de fundo e integração com APIs.
+O sistema é um **Rails 8 Headless**, focado em processamento de fundo e integração com APIs, projetado para ser resiliente às restrições modernas de web scraping de 2026 (ataques à CDP, DataDome, Cloudflare).
 
 - **Stack Técnica:**
   - **Framework:** Rails 8.1 (Solid Queue para jobs, Solid Cache).
   - **Banco de Dados:** SQLite3 em produção (WAL mode) via bind mount no Docker.
   - **Interface:** Chatbot Discord (`discordrb`). Sem interface web (apenas health check `/up`).
-  - **Automação/Scraping:** `Ferrum` (Ruby) + Headless Chrome (`chromedp/headless-shell`).
-  - **AI/LLM:** `RubyLLM` integrado via OpenRouter (Claude 3.5 Sonnet, Grok).
+  - **Automação/Scraping:** Uma combinação híbrida de `Ferrum` (Ruby) + Headless Chrome (`chromedp/headless-shell`), com integrações externas/microsserviços em Python (ex: `Nodriver` ou `Camoufox`) para contornar proteções avançadas onde o CDP padrão é detectado.
+  - **AI/LLM:** Interface principal via gems modernas como `RubyLLM` ou `llm.rb` integradas ao OpenRouter, Gemini 3.1 Flash Lite e Gemma 3 27B.
 
 ---
 
 ## 2. Componentes Principais
 
-### A. Coleta e Scraping (Back-end)
-- **Fontes:** Instagram, YouTube, X (Twitter).
-- **Estratégia:** 
-  - Uso do **Apify** como fonte primária (API paga) para maior confiabilidade.
-  - Scraping local via Ferrum/Chrome como fallback.
-- **Idempotência:** Todo job deve ser capaz de rodar múltiplas vezes sem duplicar dados (`find_or_initialize_by`).
-- **Snapshot Dedup Window:** Ignorar novas coletas de métricas (followers/likes) se o último snapshot foi há menos de 1 hora.
+### A. Coleta e Scraping (Back-end) - O Cenário de Defesa em 2026
+Em 2026, web scraping convencional de SPAs falha em sistemas como DataDome, Cloudflare Turnstile e PerimeterX devido a verificações rigorosas de CDP (Chrome DevTools Protocol) e análises de TLS Fingerprinting.
+
+- **Estratégia de Scraping Resiliente:**
+  - **A "Regra Reuters" (Nunca raspe se puder evitar):** Anti-bots verificam CDP (ex: via bloqueio de `Runtime.enable`). Ao invés de lutar contra o DataDome de portais de notícias ou grandes sites, consuma dados de fontes abertas paralelas. Utilize o **Google News RSS** (`https://news.google.com/rss/search?q=when:24h+allinurl:site.com`). É imune a detectores, sem JS, rápido e altamente estável.
+  - **Stealth Browsers para SPAs Irredutíveis:** O Chrome headless padrão será inevitavelmente detectado pelo `navigator.webdriver`. Utilize soluções modernas: **Nodriver** (interação sem CDP cru), **Camoufox** (build modificado anti-detecção), ou **SeleniumBase UC Mode**. Esses exigirão scripts sidecar em Python orquestrados pelo Ruby.
+  - **Spoofing de TLS/HTTP/2:** Anti-bots analisam o handshake TLS (JA3/JA4 fingerprints). O `Net::HTTP` nativo do Ruby acusa que você é um bot. Se precisar fazer chamadas simples, utilize wrappers como o `curl-impersonate` para espelhar fingerprints de navegadores reais sem abrir um browser inteiro.
+  - **Redes Móveis (Proxies):** IP reputation é rei. Datacenters (AWS, DigitalOcean) disparam Turnstiles na hora. Para tráfego contínuo nas redes das influenciadoras, use proxies residenciais ou 4G/5G mobile proxies, mantendo `sticky sessions` para simular navegação contínua de um humano real. O tráfego precisa ter timeouts aleatórios assemelhando-se a comportamento humano.
+
+- **Idempotência no DB:** Todo job em backend deve aceitar rodar repetidas vezes com métodos de safe guard (ex: `find_or_initialize_by(platform_post_id)`) no Rails para não inflar métricas indevidamente em caso de falha transitória do worker.
+- **Snapshot Dedup Window:** Ignorar tentativas de atualizar métricas orgânicas (followers/likes) em janelas de menos de 1 hora.
 
 ### B. O Oracle (Contexto Externo)
-Dados puros não são úteis sem o "porquê".
-- **Tracking de Eventos:** CCXP, Anime Friends, BGS. Datas, locais e mudanças bruscas.
-- **Lançamentos:** TMDB (filmes/séries), IGDB (jogos/Twitch), AniList (animes).
-- **Datas Comemorativas:** Feriados brasileiros e aniversários de franquias.
-- **News:** Scraping de RSS e X/Twitter a cada 6 horas.
+Dados isolados ("postou sobre anime X") são inúteis sem o hiper-contexto: por que aquele assunto hypou hoje? O "Oracle" preenche esse gap de contexto base do LLM.
+- **Rastreador de Eventos:** Database local de eventos geeks (CCXP, Anime Friends, BGS) e suas contagens regressivas/relevância anual.
+- **Rastreador de Lançamentos:** Consultar via jobs o TMDB (Filmes/Séries em Free-tier), IGDB API via Twitch Developer, e AniList (GraphQL livre).
+- **Rastreador de News Diárias:** Ingestion do Google News RSS mencionado acima. Nenhuma barreira anti-bot enfrentada.
 
-### C. Discovery Pipeline (Mineração de Novos Perfis)
-- Busca autônoma por novos criadores e marcas.
-- **Lógica:** Analisar menções em posts, comentários com alto engajamento e links em bios/Linktree de perfis já rastreados.
-- **Validação:** LLM avalia se o candidato é concorrente, patrocinador ou irrelevante antes de iniciar o tracking automático.
+### C. Discovery Pipeline (Mineração Autônoma de Novos Perfis)
+- O sistema varre comentários de alta interação, menções nos posts e perfis citados nas Bios/Linktrees da influenciadora.
+- Ao encontrar um novo handle, emite um Prompt Assíncrono para o LLM pedindo classificação. O modelo lê o escopo e decide salvar o candidato no banco como: `concorrente`, `patrocinador_prospecto`, ou `irrelevante`.
 
 ---
 
-## 3. Interface e Experiência do Usuário (Chatbot)
-- **Discord como UI:** Facilita o acesso rápido onde a usuária já está.
-- **Digests Diários (9h da manhã):**
-  - **Segunda:** Performance semanal.
-  - **Terça:** Radar de concorrentes.
-  - **Quarta:** Playbook de conteúdo/tendências.
-  - **Quinta:** Oportunidades de marcas/pricing.
-  - **Sexta:** Planejamento da próxima semana.
-- **Tool Calling:** O LLM tem acesso a 40+ ferramentas Ruby que consultam o banco e retornam dados estruturados (Hashes/Arrays).
+## 3. Interface e Experiência do Usuário
+
+- **Chatbot Discord (Voice of God):** Um bot integrado para facilitar entrada de quem não é técnica de dados. Esqueça gráficos e UI, é sobre perguntas em texto natural respondidas com base científica. ("O que devo gravar para YouTube esta semana baseada no TikTok concorrente?").
+- **Digest Diários Inativos (Push-based):**
+  - O sistema envia resumos madrugadas adentro (Programados por CRON no Solid Queue):
+    - Segunda: Relatório da Semana que Passou
+    - Terça: Check-up de Concorrentes Diretos
+    - Quarta: Ideações criativas (O Playbook)
+    - Quinta: Pitch para agências de publicidade baseado em eventos futuros
+    - Sexta: Plano Estrutural
+- **LLM Tool Calling API:** A "alma" da magia. Integração com um orquestrador forte onde o Discord envia a query à IA, que seleciona entre 40+ ferramentas Ruby (classes que efetuam queries locais) para formatar e entregar a resposta em tempo real.
 
 ---
 
-## 4. Dicas e "Pulos do Gato" (Destaques Técnicos)
+## 4. Dicas e Arquitetura de Ponta (O que um Agente de Software deve Garantir)
 
-### Host Header Bypass (Docker Chrome)
-O container `headless-shell` rejeita conexões que não sejam `localhost`.
-- **Truque:** Forjar o header `Host: localhost` no request inicial em `/json/version` para obter a URL do WebSocket e então reescrever o IP para o nome do serviço no Docker Compose.
+### 4.1. O Truque Cíclico: Host Header Bypass (Docker Chrome)
+O container `chromedp/headless-shell` é usado isoladamente. Ele sobe atrás de um proxy `socat` na porta 9222 que recusa bloqueantemente um Header HTTP `Host` que não seja estritamente um IP ou `localhost`.
+- **Implementação Crucial:** Antes de dar `.new` no Ferrum, você precisa fazer um request isolado da biblioteca padrão HTTP do Ruby para a rota `/json/version` no container de Chrome forjando explicitamente: `req["Host"] = "localhost"`.
+- Analise a key `webSocketDebuggerUrl` do JSON de retorno (ela voltará apontando local pro container: `ws://127.0.0.1:9222/...`). Capture essa URI, troque `127.0.0.1` pelo host do compose interno da sua rede Docker (ex: `chrome`) e passe a WSS completa na instância de setup do Ferrum. Esta gambiarra salva projetos de baterem de frente em Error Connections.
 
-### Nil vs Zero
-- **Conceito:** `nil` = dado não disponível; `0` = dado confirmado como zero.
-- **Importância:** Se tratar `nil` como `0`, o LLM tirará conclusões erradas (ex: "ninguém compartilha seus posts" quando na verdade a API apenas não retorna essa métrica).
+### 4.2. Segurança e Boas Práticas do LLM Tool Calling (2026)
+- **Não Retorne Formatações de Texto:** As Tools devem fazer consultas ORM no banco e devolver Hashes ou Arrays em JSON bem formados com dados brutos. O Modelo LLM possui excelência nativa em "pretty print" para conversa natural; pare de usar `to_s` hardcoded nas ferramentas.
+- **Clamping Obbligatório:** LLMs erram escopos. Se sua Tool tem um offset limite de 50 posts, nunca deixe o parametro vindo cru do LLM rodar. Intercepte e limpe via `amount = [[argument_llm.to_i, 1].max, 50].min`.
+- **Zero Exceções (Safe Response):** Se a tool falhar (ex: perfis nulos na Base), NUNCA dê um `.raise`. O backtrace derruba o fluxo do Agente LLM. No bloco `.execute` de cada ferramenta retorne uma flag amigável tipo `{success: false, message: "A query retornou vazio. Informe o usuário de forma amigável."}`. Isso forçará o mecanismo Chain-of-Thought (Raciocínio) do LLM a se adaptar, ao invés de crashar a ponte Ruby/API do Discord.
+- **Tipagem Declarativa:** Exija parâmetros estritamente documentados via DSL das gemas `RubyLLM` (ex. `param :user, type: :string, desc: 'Handle obrigatorio', required: true`).
 
-### Prompt Management
-- Todos os prompts em arquivos **YAML**.
-- Uso de **Includes/Snippets** (ex: `null_vs_zero.yml`, `never_invent.yml`) para evitar inconsistências entre diferentes comandos do bot.
+### 4.3. Nil vs Zero: O Caos Matemático da Análise de Dados
+- Se a API bloqueou, omitiu por rate limit, ou se a conta do insta não expõe dislikes: Você salva como **NULL** (`nil`) no SQLite3.
+- NUNCA submeta zeros como bypass padrão em views/likes do banco. `0` causa um colapso lógico do raciocínio LLM, sinalizando que a influencer gerou 0% de engajamento, alterando todo os alertas prospectivos do projeto e gerando pânico alucinado para a usuária.
+- As Tools que varrem isso no DB devem purgar/filtrar `.compact` nestes campos antes de servir a média ao modelo.
 
-### Gestão de Erros de Scraping
-- Erros de rede/banco: Retry com backoff polinomial.
-- **BlockedError/RateLimitError:** Devem ser "engolidos" silenciosamente. Retentar imediatamente só piora o bloqueio; é melhor esperar o próximo ciclo agendado.
+### 4.4. Controle de Inconsistências de Tempo Prompts de YAML
+- Organismo: Prompts salvos externamente na árvore Rails em `config/prompts/`. Uso de snippets re-utilizáveis para restrições globais como YAML extensions.
+- Injection do Relógio: LLMs são desconexos da Matrix de tempo atual. Seus prompts base OBRIGATORIAMENTE têm que concatenar dinamicamente o campo absolutista `<current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>>`. Sem isto, "busque evento na quarta que vem" quebrará o banco.
 
-### Clamping e Normalização
-- O LLM costuma errar parâmetros (ex: pedir `limit: 100` num limite de `50`).
-- **Solução:** Aplicar clamping silencioso (`[[val.to_i, 1].max, 50].min`) em todas as ferramentas.
-
----
-
-## 5. Manutenção e Produção
-- **Jobs Agendados (25+):** Distribuídos durante a madrugada para evitar sobrecarga.
-- **Time Management:** Injetar sempre o `current_datetime` no prompt para evitar alucinações de datas relativas ("amanhã").
-- **Backup:** Simples `cp` dos arquivos `.db` do SQLite, por estar em WAL mode e bind mount.
+### 4.5. Silenciamento de Block/Errors no Scraper
+- Erro 403 / Captchas / Ban por Rate-Limit (Frequentemente causados pelo Turnstile em excesso). O pior erro que um agente programador pode escrever é um loop persistente para re-tentativas imediatas no Catch do Worker.
+- Rescue total, logger limpo e descarte do job com `set backoff` futuro para pelo menos 6h-12h para a frente para "limpar a reputação" de cooldown dos Proxies residenciais em uso.
 
 ---
 
-## 6. Alternativas Gratuitas para Desenvolvimento Inicial
+## 5. Custo Zero Para Kick-Start de Desenvolvimento
 
-Para iniciar o projeto sem custos de API, recomenda-se substituir os serviços pagos pelas seguintes alternativas:
-
-### A. Alternativas ao Apify (Scraping)
-O Apify é robusto, mas pago. Para o início:
-- **YouTube:** Usar a biblioteca `yt-dlp` (gratuita e open-source) para extrair metadados e informações de vídeos.
-- **Instagram:**
-  - `instaloader` (Python): Excelente para baixar posts, perfis e metadados sem custo.
-  - `instagrapi` (Python): Permite simular a API privada do Instagram (usar com cautela para evitar bans).
-- **X (Twitter):**
-  - `snscrape`: Embora instável recentemente, ainda é uma opção para busca histórica sem API key.
-  - **RapidAPI:** Existem scrapers de Twitter com tier gratuito (ex: 50-100 requests/mês) que podem servir de base.
-- **Scraping Customizado:** Manter o uso do `Ferrum` + `Headless Chrome` (já gratuito) como o artigo sugere.
-
-### B. Alternativas ao OpenRouter/LLMs Pagos
-- **Google Gemini API:** Atualmente oferece um tier gratuito generoso (ex: Gemini 1.5 Flash com 15 RPM e 1 milhão de tokens por minuto).
-- **Groq:** Oferece acesso gratuito a modelos como Llama 3 e Mistral com latência baixíssima (ideal para o chatbot responder rápido).
-- **Mistral AI:** Possui um tier "La Plateforme" com limites razoáveis para testes.
-- **Ollama:** Se tiver hardware local, permite rodar Llama 3 ou Mistral localmente, eliminando custos e limites de rede.
-
-### C. Dados de Cultura Geek (APIs com Free Tier)
-- **Filmes/Séries:** [TMDB API](https://www.themoviedb.org/documentation/api) - Gratuito para uso não comercial.
-- **Games:** [IGDB API](https://api-docs.igdb.com/) - Gratuito (requer conta de desenvolvedor Twitch).
-- **Animes:** [AniList API](https://anilist.gitbook.io/anilist-apiv2-docs/) - Gratuito via GraphQL.
-- **Notícias:** Utilizar feeds **RSS** diretamente de portais como Jovem Nerd, Omelete e IGN, que são gratuitos por natureza.
-
-### D. Infraestrutura
-- **SQLite + Docker Compose:** Já são 100% gratuitos e rodam localmente ou em uma VPS barata (ex: Oracle Cloud Free Tier).
+Se optar por iniciar sem alugar Scraper APIs e Servidores Dedicados:
+- **Para Evitar APIs caras:**
+  - YouTube Data via sub-process em background de `yt-dlp` que roda binários em Go livres de bloqueio contínuio.
+  - Instagram via `instaloader` modularizado isolado. O X/Twitter por portais de espelho ou feeds nitter.
+- **Models API Limit:** Usufruir extensos Free-Tier do Gemini 3.1 Flash Lite. Testes com Llama 3 via `Groq` API para latências impossivelmente rápidas gratuitas nas respostas diárias e `Ollama` para varrer processamento sem rate limit na nuvem durante o job de Data Discovery em batch do banco.
+- Tudo coberto pela infra de Docker-Compose/SQLite Wal em VPS Oracle Cloud free-tier por exemplo para MVP primário limitador de custos ao criador e testador.

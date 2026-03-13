@@ -1,92 +1,76 @@
 # Plano de Prioridade de Implementação: Sistema de Data Mining para Influencers
 
-## 🚀 Fase 1: Fundação e Ambiente (Prioridade P0)
-*O objetivo aqui é ter o "esqueleto" funcional e o ambiente de desenvolvimento isolado.*
+## 🚀 Fase 1: Fundação do Sistema e Ambiente Dockerizado (Prioridade P0)
+*O objetivo aqui é ter o "esqueleto" funcional e tolerante a arquiteturas hostis isoladas (Host Header).*
 
-1.  **Setup do Rails 8.1 Headless:**
-    *   Gerar o projeto com `--minimal` (sem ActionVew, sem sprockets, etc).
-    *   Configurar **Solid Queue** (jobs) e **Solid Cache**.
-    *   Habilitar **SQLite3** em modo **WAL** para suportar concorrência.
-2.  **Conteinerização (Docker Compose):**
-    *   Serviço `app` (Rails).
-    *   Serviço `jobs` (Worker do Solid Queue).
-    *   Serviço `chrome` (`chromedp/headless-shell`).
-3.  **Core Domain Models:**
-    *   Modelos base: `SocialProfile`, `SocialPost`, `ProfileSnapshot`.
-    *   Implementar a lógica de **Idempotência**:
-        *   `find_or_initialize_by(platform_post_id)` para evitar duplicatas.
-        *   `SNAPSHOT_DEDUP_WINDOW = 1.hour` para limitar coletas excessivas.
+1.  **Setup Limpo do Rails 8.1 Headless:**
+    *   Gerar scaffolding da app em modo `--minimal` (Sem sprockets, ActionView e lixos HTML).
+    *   Setup rígido das gems de fila/cache nativo local: **Solid Queue** (jobs assíncronos) e **Solid Cache**.
+    *   Ativar obrigatóriamente banco remoto/local em **SQLite3** e transacionar o config para modo **WAL** (Write-Ahead Logging) via initializers para aguentar concorrência extrema de jobs de IO.
+2.  **Infraestrutura Docker & O "Host Header Bypass":**
+    *   Montar o pipeline `docker-compose.yml` dividindo em workers macro: `app`, `jobs`, `chrome` (imagem chromedp/headless-shell).
+    *   **CRÍTICO:** Implementar rotina customizada em Ruby para a alocação de websockets: bater no `/json/version` da porta `9222` da rede injetando manualmente o `req["Host"] = "localhost"` bypassing os logs socat, coletar o ws string sujo, dar replace de host local para host do compose network, e plugar direto dentro dos construtores do headless gem (Ferrum).
+3.  **Core Domain - Blindagem Natural:**
+    *   Migrates Nucleares: `SocialProfile`, `SocialPost`, `ProfileSnapshot`.
+    *   Criação de tipos restritivos SQL: As colunas estatísticas de likes, views NUNCA devem ter set \`default: 0\`. Nullity safety é mandatória no raciocínio base para ferramentas LLM interpretarem gaps e ban limitations de APIs externas corretamente (`nil` !== `0`).
+    *   Sinergizar Idempotência pesada utilizando limites de throttle: `SNAPSHOT_DEDUP_WINDOW` de 1 a 2 horas via cache key e calls defensivos na alocação via `.find_or_initialize_by(platform_post_id)` para isolar replicação desnecessária por falhas do scraper repetidas.
 
-## 📡 Fase 2: Motor de Coleta Gratuito (Prioridade P1)
-*Implementar a captação de dados brutos sem custos de API.*
+## 📡 Fase 2: Motor de Coleta Híbrida Militar (Prioridade P1)
+*A coleta em 2026 exige táticas de evasão contra bloqueios duros via TLS Fingerprints e Chromium Developer Tool protocols.*
 
-1.  **Ferramentas Locais de Scraping:**
-    *   Integrar **yt-dlp** para metadados de YouTube.
-    *   Integrar **Instaloader** (via script Python) para Instagram.
-    *   Usar **snscrape** ou **RapidAPI Free** para X (Twitter).
-2.  **Scraping Customizado (Ferrum):**
-    *   Utilizar Ferrum + Headless Chrome para sites que não possuem wrappers específicos.
-    *   Manter o `discover_ws_url` para bypass de Host Header.
-3.  **Resiliência e Normalização:**
-    *   Lógica de `find_or_initialize_by` e `SNAPSHOT_DEDUP_WINDOW` obrigatórios para evitar re-processamento caro em ferramentas limitadas por IP.
-    *   Normalização rigorosa de `Nil vs Zero`.
+1.  **Coletores Resilientes Inteligentes (Sem Browsers):**
+    *   O bypass base que nunca cai (Regra Reuters): Utilize agregadores RSS (`https://news.google.com/rss/search?q=when:24h+allinurl:site.com`) parseados via REXML nativo do Ruby, isentando você integralmente de desafios Bot e Captcha vindos do Cloudflare/Data Dome frente a scraping de portais nerds do cenário global de cultura.
+    *   Acoplar chamadas limpas executáveis via subshell a binários otimizados abertos, ex: `yt-dlp` varrendo IDs de canais Youtube da cena.
+2.  **Stealth Scrapers Customizados p/ SPAs Inevitáveis:**
+    *   Ao focar em sites vitrificados pelas big-techs (ex: Instagram / X), as instâncias do Ferrum com header sujo natural irão banir blocos IP. Acople microservicos (via scripts em Python chamados ou local service via socket) consumindo APIs stealth como o **Nodriver** (interação em SPAS sem dependência do problemático `Runtime.enable` root CDP) ou navegadores anti-detecção como **Camoufox**.
+    *   Injete Spoofing de alto nível nas rest calls diretas que o Rails fará externalizando tráfego de API, abraçando wraps em Ruby tipo o `curl-impersonate` (ou em python `curl_cffi`) forçando fingerprints de JA3/HTTP2/TLS como se todo packet ruby adviesse de um user-agent purista em Firefox ou Safari macOC legitimo.
+    *   (Futuro) Prepare túnel e configs prontas para integração de Proxies residenciais de alta estamiria Mobile (roteando pacotes 4G p/ bypasses IP).
+3.  **Rate limits Handling - Engula Quietamente:**
+    *   O Rescue nativo dos workers Rails tem que identificar HTTP `RateLimit` e `403`. **NUNCA** deixe o framework rodar retries clássicos em exponencias em janelas curtas para proxies, ou ele aniquilará a confiabilidade do proxy-pool. Deu erro: rescue em silêncio, aborte erro como warning de logger local, e insira job schedule com offset de atraso altíssimo (a partir de 6 horas estáticas). 
 
-## 🧠 Fase 3: O Cérebro - IA Híbrida (Prioridade P1)
-*IA de ponta resiliente utilizando Gemini 3.1 Flash Lite e Gemma 3 27B.*
+## 🧠 Fase 3: O Cérebro Inteligente - Multi LLM (Prioridade P1)
+*Montando a capacidade orgânica de avaliação do sistema.*
 
-1.  **Arquitetura Multi-Model:**
-    *   **Gemini 3.1 Flash Lite:** Exclusivo para "Deep Mining" (Jobs em lote).
-    *   **Gemma 3 27B:** Exclusivo para "Chatbot Discord" e fallback de mineração.
-2.  **Implementação do AI Router:**
-    *   Desenvolver `AiRouter` para alternar entre modelos baseado no `type` da tarefa e cota diária restante.
-    *   Implementar contador de uso diário (500 RPD do Gemini).
-3.  **Gestão de Prompts (YAML System):**
-    *   Criar diretório `config/prompts/`.
-    *   Garantir que os prompts sejam compatíveis com ambos os modelos (especialmente o limite de TPM do Gemma).
-3.  **Discovery Pipeline:**
-    *   Job para minerar novos perfis baseados em menções e comentários.
-    *   Uso do LLM para classificação prévia (concorrente, marca, irrelevante).
-4.  **Scoring e Classificação:**
-    *   Implementar lógica de cálculo de posts: `viral`, `acima da média`, `flop`.
+1.  **Orquestrador de IA de Ponta:**
+    *   Criar módulo Router que fará proxy e escolhas transacionais de qual LLM usar para otimização do projeto.
+    *   Bifurcação padrão: **Gemini 3.1 Flash Lite** isolado em background workers que demandem alta captação de tokens de mining ou Discovery; **Gemma 3 27B / Claude 3.5 via OpenRouter** na linha da frente para Chat dinâmicos sem tempo de espera. 
+2.  **Repositório YAML Estrutural (Prompts System):**
+    *   Puxar todo prompt em plain text das sub-classes e subir para layouts em `config/prompts/`.
+    *   Incluir macros em `ERB` cru ou Liquid para embutir fragmentos compartilhados (regra do Never Invent, do Null vs Zero) em conjunto com a injeção fatalística de timestamp string `<current_datetime: Time.Current>` nos base-systems, matando alucinações de agenda que modelos pre-treinados costumam carregar.
+3.  **Pipeline Autônomo de Tracking e Discovery:**
+    *   Background Job de caça de dados focado em descer a árvore social da Influencer. Ler array de menções textuais `@` publicadas e comentários hiper-rankados da última quinzena.
+    *   Coletou handles potenciais? Envie a URL de profile + bios/posts para LLM Classificatório formatar em array fixo: enum DB [`CONCORRENTE`, `PATROCINADOR_PROSPECTO`, `IGNORAR`].
 
-## 🏛️ Fase 4: O Oracle - Contexto Externo (Prioridade P2)
-*Dar ao sistema a capacidade de entender o mundo fora das redes.*
+## 🏛️ Fase 4: O Oracle e Sensibilidade de Mercado (Prioridade P2)
+*O banco de dados nativo sabe do micro. O Oracle é o radar de contexto macro do planeta terra que o LLM precisa enxergar.*
 
-1.  **APIs de Cultura Geek:**
-    *   Integrar **TMDB** (Filmes/Séries), **IGDB** (Games), **AniList** (Animes).
-2.  **News Tracker:**
-    *   Scraper de RSS para portais de notícias.
-3.  **Event Tracker:**
-    *   Base de dados de convenções (CCXP, BGS, Anime Friends) com datas e relevância.
+1.  **Datalake Externo:**
+    *   Rotinas schedulers semanais que coletam catálogos limpos abertos: TMDB para datas de Cinema e Séries ocidentais, IGDB para video-games do nicho Gamer Twitcher, e API do Anilist em calls simples em GraphQL para animes de temporada.
+2.  **Aggregator de Agenda:**
+    *   Scraping RSS contínuo de pautas (Regra Reuters) centralizando datas flutuantes de eventos nerds globais e nacionais massivos do Brasil (BGS, Anime Friends, CCXP) populando tabelas de Eventos Base.
 
-## 💬 Fase 5: Interface e Chatbot (Prioridade P2)
-*Como o usuário consome a informação.*
+## 💬 Fase 5: UI Autônoma e Chatbot Tool Caller (Prioridade P2)
+*Acesso universal sem painéis de BI via linguagem natural de humano em 2026.*
 
-1.  **Chatbot Discord (`discordrb`):**
-    *   Implementar o bot como interface principal.
-2.  **Tool Calling (O Grande Diferencial):**
-    *   Desenvolver 40+ ferramentas Ruby que permitem ao LLM consultar o SQLite.
-    *   Implementar **Clamping** nas ferramentas (ex: `limit` máximo de 50) para evitar estouro de contexto.
-3.  **Digests Diários (The Flow):**
-    *   **Segunda:** Performance semanal.
-    *   **Terça:** Radar de concorrentes.
-    *   **Quarta:** Tendências/Conteúdo.
-    *   **Quinta:** Marcas e Pricing.
-    *   **Sexta:** Planejamento.
+1.  **Discord Bot Base:**
+    *   Adicionar gem `discordrb`. Focar em setup resiliente com flags visuais no frontend (typing delay "processando..." "Puxando banco...").
+2.  **O Módulo de Ferramentas / Tool Calling Profissional (Core Business):**
+    *   Integrar APIs de controle tipo `RubyLLM` (com compatibilidade MCP / tools definition strict).
+    *   Escrever mais de 40+ comandos em classes isoladas.
+    *   **Regras Críticas no Código LLM Tool:**
+        *   Cada classe Ferramenta retorna **somente Hashes/Arrays** puros. Zero formatação estetica string base, force a IA a mastigar os dados matematicos via raw json.
+        *   **Clamping (Clamp Silencioso):** Em métodos ruby injete limites rígidos forçados com `Math.min/max`: ex `[ [{param[:limit].to_i}, 1].max, 50].min` assegurando que se o LLM alucinar offsets impossiveis pedindo 10 mil posts, ele só quebre no cap definido (50) ao inves de sobrecarregar o ActiveRecord no Host.
+        *   Não use instâncias de `raise X.exception()`. Todas as queries falhas, accounts faltantes e empty arrays devem sair do def como `{status: error, reason: "Dados ausentes"}`. Devolva cordialmente erros internos empacotados pro contexto reflexível local da IA rodar o fallback lógico iterativo sobre ela mesma perfeitamente.
+3.  **Provisão Ativa Diária - O "The Flow" Digests:**
+    *   A automação da rotina e saúde mental da Influencer não depende dela perguntar, depende do bot mandar reports proativos em blocos da semana (Via jobs com delays cron). (Ex: Segunda-Desempenho Semanal. Sexta-Ideação Base futura). 
 
-## 🛠️ Fase 6: Refinamento e Operação (Prioridade P3)
-*Manutenção e visualização.*
+## 🛠️ Fase 6: Lapidação e Operação Segura (Prioridade P3)
 
-1.  **Monitoramento:**
-    *   Dashboard simples de Health Check (`/up`).
-    *   Logs detalhados de jobs falhos.
-2.  **Geração de Imagens:**
-    *   Integração com Gemini/DALL-E para gerar artes de posts sugeridos.
-3.  **Backup e Segurança:**
-    *   Scripts de backup (`cp`) do SQLite.
-    *   Gestão de secrets (Rails Credentials).
-
----
-
-> [!IMPORTANT]
-> **Dica de Ouro:** Não comece pela arquitetura. Sente com quem vai usar e defina os problemas reais (como o `IDEA.md`). O código deve ser escravo da necessidade, não o contrário.
+1.  **Monitoramento Básico e Visão Macro:**
+    *   Ativação da rota simples `/up` (Built-in do Rails 8). Tratamento em console log stream de falhas nos nodes dos workers de proxy.
+2.  **Auto-Healing Reports:**
+    *   Workers que disparam alertas num Channel admin do Discord na exata hora em que um container de scrapping Camoufox / parser base reportar descompasso violento na quebra de nodes DOM (Sites que viraram o Front-end e baniram a hierarquia de Classes CSS temporariamente do Web Scraper Base).
+3.  **Cadeia Multimidia Opcional:**
+    *   Testes isolados em chamadas Gemini Imagen 3/DALL-E criando assets bases, gerando imagens inspiracionais de thumbs e moodboards a partir das descrições analisadas do concorrente p/ agregar nos Digests p/ influenciadora.
+4.  **A Backup Simples de Um Banco Simples:**
+    *   Jobs shell que invocam `cp` nas pastilhas absolutas `/data/*.sqlite3` copiando p/ volumes protegidos cloud. (Garantia por rodar WAL em modo de cópia resilientes live). Mantenha `credentials.yml.enc` e a master.key trancadas num gerenciador de secrets à parte da máquina rodando.
