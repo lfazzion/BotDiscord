@@ -2,14 +2,9 @@ require_relative "boot"
 
 require "rails"
 require "active_model/railtie"
+require "active_record/railtie"
 require "active_job/railtie"
 require "action_controller/railtie"
-require "action_view/railtie"
-require "action_text/railtie"
-require "active_storage/railtie"
-require "action_mailbox/railtie"
-require "rails/test_unit/railtie"
-require "sprockets/railtie"
 
 Bundler.require(*Rails.groups)
 

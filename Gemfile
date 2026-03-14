@@ -1,6 +1,6 @@
 source 'https://rubygems.org'
 
-ruby '~> 3.4'
+ruby '~> 4.0'
 
 gem 'rails', '~> 8.1.0'
 gem 'sqlite3', '~> 2.6'
@@ -18,7 +18,9 @@ group :test do
   gem 'minitest-reporters'
   gem 'webmock'
   gem 'factory_bot_rails'
+  gem 'faker'
 end
 
 gem 'ferrum'             # Headless Chrome via WebSocket (chromedp/headless-shell)
 gem 'bootsnap', require: false
+gem 'tzinfo-data'

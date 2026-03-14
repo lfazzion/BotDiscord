@@ -10,7 +10,6 @@ class CreateProfileSnapshots < ActiveRecord::Migration[8.0]
       t.timestamps
     end
 
-    add_index :profile_snapshots, :social_profile_id
     add_index :profile_snapshots, :recorded_at
   end
 end
