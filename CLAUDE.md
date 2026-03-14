@@ -24,23 +24,30 @@ bin/rails jobs:work           # Workers
 bin/rails test                # Tests
 ```
 
-## Key Rules (CRITICAL)
+## System Context & AI Routing (CRITICAL)
 
-1. **Null vs Zero**: NEVER `default: 0` on likes/views/followers. Use `nil` when API blocks.
-2. **Prompts**: Include `<current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>` in all LLM prompts.
-3. **Tool Calling**: NEVER use `.raise` - return `{success: false, message: "..."}` instead.
-4. **Tool Returns**: Return pure Hash/Array JSON, never formatted strings.
-5. **Clamping**: Always clamp LLM parameters: `amount = [[arg.to_i, 1].max, 50].min`
-6. **Rate Limits**: NEVER retry immediately - schedule job with 6-12h backoff.
+> **PROGRESSIVE DISCLOSURE**: To avoid flooding the AI context window, specific domain rules are distributed in `CONTEXT.md` files across the project.
+> **YOU MUST** read the `CONTEXT.md` file in a directory before modifying or creating files within it!
+
+### Directory Contexts (Read before modifying!)
+- **`app/services/CONTEXT.md`** -> Rules for Business/Domain Logic.
+- **`app/jobs/CONTEXT.md`** -> Rules for Async Queue, Idempotency, Rate Limits.
+- **`app/tools/CONTEXT.md`** -> Rules for LLM Tool Calling and JSON returns.
+- **`lib/scraping/CONTEXT.md`** -> Rules for Ferrum headless scraping and Docker bypass.
+- **`lib/llm/CONTEXT.md`** -> Rules for Prompt Time Injection and OpenRouter.
+
+## Global Rule
+
+1. **Null vs Zero**: NEVER `default: 0` on likes/views/followers. Use `nil` when API blocks. Always `.compact` averages.
 
 ## Structure
 
 ```
-app/services/     # Business logic (REQUIRED)
-app/jobs/        # Solid Queue jobs
-app/tools/       # 40+ LLM Tool Calling classes
-lib/scraping/    # Ferrum scrapers
-lib/llm/         # LLM orchestrator
+app/services/     # Business logic (read CONTEXT.md)
+app/jobs/        # Solid Queue jobs (read CONTEXT.md)
+app/tools/       # 40+ LLM Tool Calling classes (read CONTEXT.md)
+lib/scraping/    # Ferrum scrapers (read CONTEXT.md)
+lib/llm/         # LLM orchestrator (read CONTEXT.md)
 config/prompts/  # YAML/ERB prompts
 test/            # Minitest
 ```

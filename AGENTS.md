@@ -42,54 +42,26 @@ bin/rails routes              # List routes
 
 ---
 
-## Non-Negotiable Rules
+## System Context & AI Routing (CRITICAL)
+
+> **PROGRESSIVE DISCLOSURE**: To avoid flooding the AI context window, specific domain rules are distributed in `CONTEXT.md` files across the project.
+> **YOU MUST** read the `CONTEXT.md` file in a directory before modifying or creating files within it!
+
+### Directory Contexts (Read before modifying!)
+- **`app/services/CONTEXT.md`** -> Rules for Business/Domain Logic.
+- **`app/jobs/CONTEXT.md`** -> Rules for Async Queue, Idempotency, Rate Limits.
+- **`app/tools/CONTEXT.md`** -> Rules for LLM Tool Calling and JSON returns.
+- **`lib/scraping/CONTEXT.md`** -> Rules for Ferrum headless scraping and Docker bypass.
+- **`lib/llm/CONTEXT.md`** -> Rules for Prompt Time Injection and OpenRouter.
+
+---
+
+## Global Non-Negotiable Rules
 
 ### 1. Null vs Zero - CRITICAL
 - **NEVER** use `default: 0` on numeric columns (likes, views, followers)
 - When API blocks/rate-limit: save as `nil`, **NEVER** as `0`
 - **ALWAYS** use `.compact` in queries that calculate averages
-
-### 2. LLM Prompts - Time Injection
-- **REQUIRED** include timestamp in base prompts:
-  ```erb
-  <current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>
-  ```
-- Prompts in `config/prompts/` (YAML or ERB)
-
-### 3. Ferrum + Docker Host Header Bypass
-- Use `chromedp/headless-shell` container isolated
-- **REQUIRED** bypass: request `/json/version` with `req["Host"] = "localhost"`
-- Collect `webSocketDebuggerUrl`, replace internal IP for docker network
-
-### 4. LLM Tool Calling
-- **NEVER** use `.raise` - return `{success: false, message: "..."}`
-- **REQUIRED** parameter clamping:
-  ```ruby
-  amount = [[argument_llm.to_i, 1].max, 50].min
-  ```
-- Return **only** pure JSON hashes/arrays (no string formatting)
-
-### 5. Rate Limiting & Errors
-- Identify HTTP `RateLimit` / `403` / Captcha
-- **NEVER** immediate retry - silence, schedule job with 6-12h backoff
-
-### 6. Idempotency
-- Use `find_or_initialize_by(platform_post_id)` in jobs
-- Snapshot dedup window: ignore metrics in windows < 1-2 hours
-
----
-
-## Architecture Patterns
-
-### Services
-- **REQUIRED** domain logic in `app/services/`
-- NEVER in controllers or models
-- Naming: `NameService` (e.g., `InfluencerProfileService`)
-
-### Background Jobs
-- Solid Queue (Async)
-- Naming: `NameJob` (e.g., `TwitterCollectJob`)
-- Jobs must be idempotent
 
 ---
 
