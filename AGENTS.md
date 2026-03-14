@@ -69,8 +69,8 @@ bin/rails routes              # List routes
 
 - [Requirements](Requisitos_Projeto_Data_Mining.md)
 - [Implementation Plan](Plano_Prioridade_Implementacao.md)
-- [AI Strategy](Documentations/estrategia_multi_model_ai.md)
-- [Docker Chrome](Documentations/docker_chrome_setup.md)
+- [AI Strategy](docs/estrategia_multi_model_ai.md)
+- [Docker Chrome](docs/docker_chrome_setup.md)
 
 ---
 

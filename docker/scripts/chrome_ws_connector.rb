@@ -4,7 +4,7 @@
 # to Chrome running in a Docker container.
 #
 # See: Requisitos_Projeto_Data_Mining.md:57-60
-# See: Documentations/docker_chrome_setup.md
+# See: docs/docker_chrome_setup.md
 
 require 'net/http'
 
