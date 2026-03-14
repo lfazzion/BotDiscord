@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/app
+      - sqlite_data:/data
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_PATH=/data/production.sqlite3
+      - RAILS_ENV=production
+    depends_on:
+      - chrome
+    command: bin/rails server -b 0.0.0.0
+
+  jobs:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/app
+      - sqlite_data:/data
+    environment:
+      - DATABASE_PATH=/data/production.sqlite3
+      - RAILS_ENV=production
+    depends_on:
+      - chrome
+    command: bin/rails jobs:work
+
+  chrome:
+    image: chromedp/headless-shell:latest
+    ports:
+      - "9222:9222"
+    shm_size: 2GB
+    security_opt:
+      - seccomp:unconfined
+
+volumes:
+  sqlite_data:
