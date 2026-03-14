@@ -12,5 +12,23 @@ test:
   database: db/test.sqlite3
 
 production:
-  <<: *default
-  database: <%= ENV["DATABASE_PATH"] || "db/production.sqlite3" %>
+  primary:
+    <<: *default
+    database: storage/production.sqlite3
+    pragmas:
+      journal_mode: wal          # Lock handling non-blocking writes
+      synchronous: normal
+      mmap_size: 134217728
+      cache_size: 10000
+  queue:
+    <<: *default
+    database: storage/production_queue.sqlite3
+    migrations_paths: db/queue_migrate
+    pragmas:
+      journal_mode: wal
+  cache:
+    <<: *default
+    database: storage/production_cache.sqlite3
+    migrations_paths: db/cache_migrate
+    pragmas:
+      journal_mode: wal

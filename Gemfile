@@ -20,4 +20,5 @@ group :test do
   gem 'factory_bot_rails'
 end
 
+gem 'ferrum'             # Headless Chrome via WebSocket (chromedp/headless-shell)
 gem 'bootsnap', require: false

@@ -1,43 +1,63 @@
 version: '3.8'
 
+# Rede interna fechada — nenhum serviço expõe porta desnecessária
+networks:
+  internal:
+    driver: bridge
+
 services:
+  # ── Serviço principal: API Puma ────────────────────────────────────────────
   app:
     build:
-      context: .
-      dockerfile: docker/Dockerfile
+      context: ..                    # raiz do projeto
+      dockerfile: docker/Dockerfile  # relativo ao context
+    environment:
+      RAILS_ENV: production
+      CHROME_HOST: chrome
+      CHROME_PORT: "9222"
+      RAILS_LOG_TO_STDOUT: "true"
     volumes:
-      - .:/app
-      - sqlite_data:/data
+      # Bind mount relativo ao docker-compose.yml → ../storage = raiz do projeto
+      - ../storage:/rails/storage
     ports:
       - "3000:3000"
-    environment:
-      - DATABASE_PATH=/data/production.sqlite3
-      - RAILS_ENV=production
     depends_on:
-      - chrome
+      chrome:
+        condition: service_started
+    networks:
+      - internal
     command: bin/rails server -b 0.0.0.0
+    restart: unless-stopped
 
+  # ── Serviço de Jobs: Solid Queue ──────────────────────────────────────────
   jobs:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile
-    volumes:
-      - .:/app
-      - sqlite_data:/data
     environment:
-      - DATABASE_PATH=/data/production.sqlite3
-      - RAILS_ENV=production
+      RAILS_ENV: production
+      CHROME_HOST: chrome
+      CHROME_PORT: "9222"
+      RAILS_LOG_TO_STDOUT: "true"
+    volumes:
+      - ../storage:/rails/storage
     depends_on:
-      - chrome
-    command: bin/rails jobs:work
+      chrome:
+        condition: service_started
+    networks:
+      - internal
+    command: bundle exec rake solid_queue:start
+    restart: unless-stopped
 
+  # ── Chrome Headless Shell ─────────────────────────────────────────────────
   chrome:
-    image: chromedp/headless-shell:latest
-    ports:
-      - "9222:9222"
-    shm_size: 2GB
+    image: chromedp/headless-shell:stable
+    # shm_size obrigatório: evita memory leak de renderização no Ferrum/Chrome 120+
+    shm_size: '2gb'
     security_opt:
       - seccomp:unconfined
-
-volumes:
-  sqlite_data:
+    ports:
+      - "9222:9222"
+    networks:
+      - internal
+    restart: unless-stopped

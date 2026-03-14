@@ -1,0 +1,30 @@
+# SQLite databases — não versionar os binários de produção
+storage/*.sqlite3
+storage/*.sqlite3-wal
+storage/*.sqlite3-shm
+
+# Dev databases
+db/*.sqlite3
+db/*.sqlite3-wal
+db/*.sqlite3-shm
+
+# Bundle cache
+/.bundle
+/vendor/bundle
+
+# Logs
+/log/*
+!/log/.keep
+
+# Temporários
+/tmp/*
+!/tmp/.keep
+
+# Bootsnap cache
+/tmp/cache/bootsnap*
+
+# Credenciais / secrets
+/config/master.key
+/config/credentials.yml.enc
+.env
+.env.*

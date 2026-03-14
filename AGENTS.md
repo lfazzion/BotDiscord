@@ -20,7 +20,7 @@
 ## Commands
 
 ```bash
-docker-compose up -d          # Start services
+docker-compose -f docker/docker-compose.yml up -d  # Start services
 bin/rails console             # Console
 bin/rails jobs:work           # Workers
 bin/rails test                # Tests
@@ -53,6 +53,7 @@ bin/rails routes              # List routes
 - **`app/tools/CONTEXT.md`** -> Rules for LLM Tool Calling and JSON returns.
 - **`lib/scraping/CONTEXT.md`** -> Rules for Ferrum headless scraping and Docker bypass.
 - **`lib/llm/CONTEXT.md`** -> Rules for Prompt Time Injection and OpenRouter.
+- **`docker/CONTEXT.md`** -> Rules for Docker compose, shared volumes and Chrome Headless.
 
 ---
 
