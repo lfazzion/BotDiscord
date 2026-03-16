@@ -1,7 +1,7 @@
 require 'net/http'
 require 'json'
 
-module ChromeWSConnector
+module ChromeWsConnector
   CHROME_HOST = ENV.fetch('CHROME_HOST', 'chrome')
   CHROME_PORT = ENV.fetch('CHROME_PORT', '9222').to_i
 

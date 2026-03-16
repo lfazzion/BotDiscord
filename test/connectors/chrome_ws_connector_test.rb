@@ -2,7 +2,7 @@ require "test_helper"
 require "webmock"
 require_relative "../../lib/chrome_ws_connector"
 
-class ChromeWSConnectorTest < ActiveSupport::TestCase
+class ChromeWsConnectorTest < ActiveSupport::TestCase
   setup do
     @chrome_host = "chrome"
     @chrome_port = 9222
@@ -24,7 +24,7 @@ class ChromeWSConnectorTest < ActiveSupport::TestCase
       .with(headers: { "Host" => "localhost" })
       .to_return(status: 200, body: mock_response, headers: { "Content-Type" => "application/json" })
 
-    ws_url = ChromeWSConnector.fetch_ws_url
+    ws_url = ChromeWsConnector.fetch_ws_url
 
     assert_includes ws_url, "ws://"
     assert_includes ws_url, "/devtools/browser/"
@@ -39,7 +39,7 @@ class ChromeWSConnectorTest < ActiveSupport::TestCase
       .with(headers: { "Host" => "localhost" })
       .to_return(status: 200, body: mock_response, headers: { "Content-Type" => "application/json" })
 
-    ws_url = ChromeWSConnector.fetch_ws_url
+    ws_url = ChromeWsConnector.fetch_ws_url
 
     assert_includes ws_url, "ws://chrome"
     assert_not_includes ws_url, "localhost"
@@ -54,7 +54,7 @@ class ChromeWSConnectorTest < ActiveSupport::TestCase
       .with(headers: { "Host" => "localhost" })
       .to_return(status: 200, body: mock_response, headers: { "Content-Type" => "application/json" })
 
-    ws_url = ChromeWSConnector.fetch_ws_url
+    ws_url = ChromeWsConnector.fetch_ws_url
 
     assert_includes ws_url, "ws://chrome"
     assert_not_includes ws_url, "127.0.0.1"
@@ -64,8 +64,8 @@ class ChromeWSConnectorTest < ActiveSupport::TestCase
     ENV.delete("CHROME_HOST")
     ENV.delete("CHROME_PORT")
 
-    assert_equal "chrome", ChromeWSConnector.chrome_host
-    assert_equal 9222, ChromeWSConnector.chrome_port
+    assert_equal "chrome", ChromeWsConnector.chrome_host
+    assert_equal 9222, ChromeWsConnector.chrome_port
   end
 
   test "should raise error when response is not 200" do
@@ -73,8 +73,8 @@ class ChromeWSConnectorTest < ActiveSupport::TestCase
       .with(headers: { "Host" => "localhost" })
       .to_return(status: 503, body: "Service Unavailable")
 
-    assert_raises(ChromeWSConnector::Error) do
-      ChromeWSConnector.fetch_ws_url
+    assert_raises(ChromeWsConnector::Error) do
+      ChromeWsConnector.fetch_ws_url
     end
   end
 
@@ -85,21 +85,21 @@ class ChromeWSConnectorTest < ActiveSupport::TestCase
       .with(headers: { "Host" => "localhost" })
       .to_return(status: 200, body: mock_response, headers: { "Content-Type" => "application/json" })
 
-    assert_raises(ChromeWSConnector::Error) do
-      ChromeWSConnector.fetch_ws_url
+    assert_raises(ChromeWsConnector::Error) do
+      ChromeWsConnector.fetch_ws_url
     end
   end
 
   test "replace_host should correctly replace localhost" do
     url = "ws://localhost:9222/devtools/browser/abc"
-    result = ChromeWSConnector.replace_host(url)
+    result = ChromeWsConnector.replace_host(url)
 
     assert_equal "ws://chrome:9222/devtools/browser/abc", result
   end
 
   test "replace_host should correctly replace 127.0.0.1" do
     url = "ws://127.0.0.1:9222/devtools/browser/abc"
-    result = ChromeWSConnector.replace_host(url)
+    result = ChromeWsConnector.replace_host(url)
 
     assert_equal "ws://chrome:9222/devtools/browser/abc", result
   end

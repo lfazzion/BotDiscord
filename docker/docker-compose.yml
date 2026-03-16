@@ -11,6 +11,8 @@ services:
     build:
       context: ..                    # raiz do projeto
       dockerfile: docker/Dockerfile  # relativo ao context
+    env_file:
+      - ../.env                      # variáveis de ambiente (não commitar)
     environment:
       RAILS_ENV: production
       CHROME_HOST: chrome
@@ -34,6 +36,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    env_file:
+      - ../.env                      # variáveis de ambiente (não commitar)
     environment:
       RAILS_ENV: production
       CHROME_HOST: chrome
