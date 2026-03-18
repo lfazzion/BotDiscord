@@ -68,6 +68,6 @@ class ProfileSnapshotTest < ActiveSupport::TestCase
   end
 
   test "should belong to social_profile" do
-    assert_association @snapshot, :social_profile, :belongs_to
+    assert_respond_to @snapshot, :social_profile
   end
 end

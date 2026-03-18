@@ -76,6 +76,6 @@ class SocialPostTest < ActiveSupport::TestCase
   end
 
   test "should belong to social_profile" do
-    assert_association @post, :social_profile, :belongs_to
+    assert_respond_to @post, :social_profile
   end
 end

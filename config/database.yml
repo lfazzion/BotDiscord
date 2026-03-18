@@ -10,13 +10,18 @@ development:
 test:
   <<: *default
   database: db/test.sqlite3
+  migrations_paths:
+    - db/migrate
+    - db/queue_migrate
+    - db/cache_migrate
 
 production:
   primary:
     <<: *default
     database: storage/production.sqlite3
+    pool: <%= ENV.fetch("PRIMARY_POOL") { 10 } %>
     pragmas:
-      journal_mode: wal          # Lock handling non-blocking writes
+      journal_mode: wal
       synchronous: normal
       mmap_size: 134217728
       cache_size: 10000
@@ -26,9 +31,11 @@ production:
     migrations_paths: db/queue_migrate
     pragmas:
       journal_mode: wal
+    pool: <%= ENV.fetch("SOLID_QUEUE_POOL") { 10 } %>
   cache:
     <<: *default
     database: storage/production_cache.sqlite3
     migrations_paths: db/cache_migrate
     pragmas:
       journal_mode: wal
+    pool: <%= ENV.fetch("SOLID_CACHE_POOL") { 5 } %>

@@ -18,6 +18,8 @@ services:
       CHROME_HOST: chrome
       CHROME_PORT: "9222"
       RAILS_LOG_TO_STDOUT: "true"
+      XDG_CONFIG_HOME: /tmp/.chromium
+      XDG_CACHE_HOME: /tmp/.chromium
     volumes:
       # Bind mount relativo ao docker-compose.yml → ../storage = raiz do projeto
       - ../storage:/rails/storage
@@ -43,6 +45,8 @@ services:
       CHROME_HOST: chrome
       CHROME_PORT: "9222"
       RAILS_LOG_TO_STDOUT: "true"
+      XDG_CONFIG_HOME: /tmp/.chromium
+      XDG_CACHE_HOME: /tmp/.chromium
     volumes:
       - ../storage:/rails/storage
     depends_on:
@@ -50,7 +54,7 @@ services:
         condition: service_started
     networks:
       - internal
-    command: bundle exec rake solid_queue:start
+    command: bin/jobs start
     restart: unless-stopped
 
   # ── Chrome Headless Shell ─────────────────────────────────────────────────

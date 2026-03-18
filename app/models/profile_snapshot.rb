@@ -13,6 +13,7 @@ class ProfileSnapshot < ApplicationRecord
     recent_snapshot = recent.where(social_profile_id: profile_id).first
     return recent_snapshot if recent_snapshot
 
-    create!(social_profile_id: profile_id, followers_count: nil, following_count: nil, posts_count: nil)
+    create!(social_profile_id: profile_id, recorded_at: Time.current,
+            followers_count: nil, following_count: nil, posts_count: nil)
   end
 end

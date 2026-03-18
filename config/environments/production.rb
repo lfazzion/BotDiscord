@@ -11,6 +11,7 @@ Rails.application.configure do
   # ── Active Job / Solid Queue ────────────────────────────────────────────────
   # Solid Queue persiste no shard `queue` do SQLite (storage/production_queue.sqlite3)
   config.active_job.queue_adapter = :solid_queue
+  config.solid_queue.connects_to = { database: { writing: :queue } }
 
   # ── Miscelânea ───────────────────────────────────────────────────────────────
   config.eager_load = true
