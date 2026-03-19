@@ -20,12 +20,41 @@
 ## Commands
 
 ```bash
-docker-compose -f docker/docker-compose.yml up -d  # Start services
-bin/rails console             # Console
+# Docker (run from project root)
+docker-compose -f docker/docker-compose.yml up -d     # Start services
+docker-compose -f docker/docker-compose.yml logs -f  # Watch logs
+docker exec -it docker-app-1 bin/rails console        # Rails console
+docker exec -it docker-app-1 bin/rails db:migrate     # Run migrations
+
+# Local development
 bin/rails jobs:work           # Workers
 bin/rails test                # Tests
 bin/rails routes              # List routes
 ```
+
+---
+
+## Docker Architecture
+
+```
+┌─────────────┐    ┌─────────────┐    ┌──────────────────┐
+│  docker-app │    │ docker-jobs │    │  docker-chrome   │
+│   Puma :3000│    │ Solid Queue │    │ headless-shell   │
+│             │    │             │    │     :9222        │
+└──────┬──────┘    └──────┬──────┘    └────────┬─────────┘
+       │                  │                    │
+       └──────────────────┴──────── storage/───┘
+                     │
+         ┌───────────┴───────────┐
+         │  production.sqlite3   │
+         │  (shared bind mount)   │
+         └───────────────────────┘
+```
+
+### Container Entrypoints
+- `bin/entrypoint` (app): Runs migrations → starts Puma
+- `bin/entrypoint-jobs` (jobs): Starts Solid Queue supervisor
+- `bin/jobs`: Solid Queue CLI (`start` command, NOT `supervisor`)
 
 ---
 
@@ -39,6 +68,7 @@ bin/rails routes              # List routes
 - LLM: `lib/llm/`
 - Oracle: `lib/oracle/` (TMDB, IGDB, AniList)
 - Prompts: `config/prompts/`
+- Migrations: `db/migrate/`, `db/queue_migrate/`, `db/cache_migrate/`
 
 ---
 
@@ -63,6 +93,13 @@ bin/rails routes              # List routes
 - **NEVER** use `default: 0` on numeric columns (likes, views, followers)
 - When API blocks/rate-limit: save as `nil`, **NEVER** as `0`
 - **ALWAYS** use `.compact` in queries that calculate averages
+
+### 2. Database Configuration
+- Production uses multi-database setup: `primary`, `queue`, `cache` connections
+- All point to same SQLite file (`storage/production.sqlite3`) via bind mount
+- Solid Queue tables in `db/queue_migrate/`, Solid Cache in `db/cache_migrate/`
+- App container runs migrations on startup via `bin/entrypoint`
+- Jobs container starts workers via `bin/entrypoint-jobs`
 
 ---
 

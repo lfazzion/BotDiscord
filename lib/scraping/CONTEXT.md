@@ -1,8 +1,19 @@
 # Contexto: lib/scraping
 
-Este diretório lida com coleta de dados e scraping (Ferrum + chromedp/headless-shell).
+Este diretório lida com coleta de dados e scraping (Ferrum + Chrome headless).
+
+## Arquitetura de Scraping
+
+```
+app (Ruby) ──WebSocket──> docker-chrome (Chrome headless)
+                                   │
+                              Ferrum/CDP
+                                   │
+                        :9222 (DevTools Protocol)
+```
 
 ## Regras Críticas de Scraping para IA
-1. **Containerização Headless**: O scrape roda obrigatoriamente usando Ferrum, e comunicando via Docker em container isolado de browser (`chromedp/headless-shell`).
-2. **Bypass de Docker Host Header**: Essencial para conectar o dev tools endpoint no container. É **OBRIGATÓRIO** realizar requests pro endpoint `/json/version` substituindo localmente o header host: `req["Host"] = "localhost"`. O retorno coletará uma `webSocketDebuggerUrl` cujos IPs internos precisarão ser adaptados para a network docker apropriada.
-3. **Identificação de Bloqueios**: Preste atenção se a página retornar Captchas / Cloudflare loops infinitos ou 403 Forbidden. Em caso de bloqueio contínuo, reporte `nil` e desista, deixando a rotina de job retentar em 6 a 12 horas.
+1. **Container Chrome**: O scrape roda usando Ferrum conectando ao container `docker-chrome` (chromedp/headless-shell).
+2. **Variáveis de Ambiente**: `CHROME_HOST=chrome` e `CHROME_PORT=9222` são passadas via docker-compose.
+3. **Host Header Bypass**: É **OBRIGATÓRIO** substituir o header `Host` para `localhost` ao conectar no `/json/version`. Isso contorna a rejeição do Chrome 120+ a headers de origin.
+4. **Identificação de Bloqueios**: Captchas, Cloudflare loops ou 403 Forbidden devem retornar `nil` e agendar retry em 6-12 horas.

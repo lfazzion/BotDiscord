@@ -55,4 +55,6 @@ USER rails
 
 EXPOSE 3000
 
+# Entrypoint específico para jobs que garante migrations
+ENTRYPOINT ["bin/entrypoint-jobs"]
 CMD ["bin/rails", "server", "-b", "0.0.0.0"]

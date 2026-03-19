@@ -30,6 +30,7 @@ services:
         condition: service_started
     networks:
       - internal
+    entrypoint: bin/entrypoint
     command: bin/rails server -b 0.0.0.0
     restart: unless-stopped
 
@@ -54,7 +55,8 @@ services:
         condition: service_started
     networks:
       - internal
-    command: bin/jobs start
+    entrypoint: bin/entrypoint-jobs
+    command: bin/jobs
     restart: unless-stopped
 
   # ── Chrome Headless Shell ─────────────────────────────────────────────────

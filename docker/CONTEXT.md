@@ -40,9 +40,7 @@ docker-compose -f docker/docker-compose.yml down
        └──────────────────┴──────── network:internal ──────────────┘
                           │
                    ../storage/ (bind mount)
-                   ├── production.sqlite3        ← primary
-                   ├── production_queue.sqlite3  ← solid_queue
-                   └── production_cache.sqlite3  ← solid_cache
+                   └── production.sqlite3 (único arquivo, 3 conexões)
 ```
 
 ---
@@ -66,10 +64,17 @@ docker-compose -f docker/docker-compose.yml down
 
 ### 4. SQLite e Bind Mount
 - O diretório `storage/` na raiz é montado em `/rails/storage` tanto no `app` quanto no `jobs`.
-- Isso garante que os 3 bancos sejam compartilhados e persistidos no host.
+- **Único arquivo SQLite** (`production.sqlite3`) com 3 conexões separadas (primary, queue, cache).
+- Migrations de queue em `db/queue_migrate/`, cache em `db/cache_migrate/`.
+- App container roda migrations automaticamente via `bin/entrypoint` na inicialização.
 - **NUNCA** usar Docker volume nomeado para os bancos — use bind mount para garantir acesso direto.
 
-### 5. Imagem
+### 5. Entrypoints
+- `bin/entrypoint` (app): Roda migrations → inicia Puma
+- `bin/entrypoint-jobs` (jobs): Inicia Solid Queue supervisor via `bin/jobs start`
+- Não use comando `supervisor` diretamente — use `bin/jobs start`
+
+### 6. Imagem
 - Base: `ruby:3.4-slim`
 - Sem Node.js (projeto Headless Zero HTML — nada de Sprockets/ActionView).
 - Build stage tem `build-essential` + `libsqlite3-dev`; runtime stage tem apenas `libsqlite3-0`.

@@ -105,39 +105,127 @@ Cada job é independente e pode ser executado manualmente se necessário. A idem
 
 ### Pré-requisitos
 
-Docker e Docker Compose precisam estar instalados. O projeto utiliza três containers: app (Rails), jobs (workers), e chrome (Chrome headless para scraping).
+- Docker e Docker Compose instalados
+- Arquivo `.env` com variáveis de ambiente (ver `.env.example` se existir)
 
-### Comandos Principais
+### Passo a Passo
 
-Iniciar todos os serviços:
+#### 1. Criar arquivo de ambiente
+
+```bash
+cp .env.example .env  # ou criar manualmente
+```
+
+Edite o `.env` e configure as variáveis necessárias:
+- `DATABASE_URL` (opcional, usa SQLite por padrão)
+- Variáveis do Discord (se usar o bot)
+- Variáveis da LLM (se usar scraping com IA)
+
+#### 2. Subir os containers
 
 ```bash
 docker-compose -f docker/docker-compose.yml up -d
 ```
 
-Acessar o console do Rails:
+Isso sobe 3 serviços:
+- **app**: Rails Puma na porta 3000
+- **jobs**: Solid Queue workers
+- **chrome**: Chrome headless na porta 9222
+
+#### 3. Verificar se está funcionando
 
 ```bash
-bin/rails console
+# Verificar status dos containers
+docker ps
+
+# Testar endpoint da aplicação
+curl http://localhost:3000/up
+# Retorna HTML com fundo verde se OK
 ```
 
-Executar os workers:
+#### 4. Ver logs
 
 ```bash
+# Todos os serviços
+docker-compose -f docker/docker-compose.yml logs -f
+
+# Serviço específico
+docker logs docker-app-1
+docker logs docker-jobs-1
+docker logs docker-chrome-1
+```
+
+### Comandos Úteis
+
+#### Acessar console do Rails (dentro do container)
+
+```bash
+docker exec -it docker-app-1 bin/rails console
+```
+
+#### Executar migrations manualmente
+
+```bash
+docker exec -it docker-app-1 bin/rails db:migrate
+```
+
+#### Ver jobs ativos
+
+```bash
+docker exec -it docker-app-1 bin/rails runner "puts SolidQueue::Process.count"
+```
+
+#### Parar todos os serviços
+
+```bash
+docker-compose -f docker/docker-compose.yml down
+```
+
+#### Rebuild (após mudanças no código)
+
+```bash
+docker-compose -f docker/docker-compose.yml build
+docker-compose -f docker/docker-compose.yml up -d
+```
+
+### Desenvolvimento Local (sem Docker)
+
+```bash
+# Instalar dependências
+bundle install
+
+# Rodar migrations
+bin/rails db:migrate
+
+# Iniciar workers
 bin/rails jobs:work
-```
 
-Rodar testes:
+# Em outro terminal, iniciar servidor
+bin/rails server
 
-```bash
+# Rodar testes
 bin/rails test
 ```
 
-Listar rotas disponíveis:
+### Estrutura dos Bancos de Dados
 
-```bash
-bin/rails routes
-```
+O projeto usa SQLite com 3 conexões separadas:
+
+| Conexão | Arquivo | Uso |
+|---------|---------|-----|
+| primary | storage/production.sqlite3 | Tabelas da aplicação |
+| queue | storage/production.sqlite3 | Tabelas do Solid Queue |
+| cache | storage/production.sqlite3 | Tabelas do Solid Cache |
+
+Todas apontam para o mesmo arquivo via bind mount, garantindo que app e jobs compartilhem os dados.
+
+### Troubleshooting
+
+**Jobs não iniciam**: Verifique se migrations rodaram (`docker logs docker-app-1`)
+
+**Database locked**: O app e jobs podem estar conflitando. Tente reiniciar apenas o jobs: `docker restart docker-jobs-1`
+
+**Chrome não responde**: Verifique se o container chrome está rodando: `docker ps | grep chrome`
 
 ## Lições Aprendidas
 
