@@ -72,6 +72,26 @@ services:
       - internal
     restart: unless-stopped
 
+  # ── Test Runner (on-demand) ─────────────────────────────────────────────
+  test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      RAILS_ENV: test
+      CHROME_HOST: chrome
+      CHROME_PORT: "9222"
+    volumes:
+      - ../:/rails
+    networks:
+      - internal
+    profiles:
+      - test
+    entrypoint: bin/rails
+    command: test
+
   # ── Python Scraper Sidecar ──────────────────────────────────────────────
   python-scraper:
     build:

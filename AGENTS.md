@@ -1,157 +1,141 @@
-# BotDiscord - Data Mining System for Influencers
+# AGENTS.md — BotDiscord
 
-> Rails 8 Headless project for data collection, influencer analysis, and Discord chatbot with LLM.
+Headless Rails 8.1 app for influencer data mining, scraping, and Discord bot integration. Ruby ~> 4.0, SQLite3 (WAL), Solid Queue/Cache, Minitest.
 
-## Stack
+## Build / Test / Lint Commands
 
-| Layer | Technology |
-|-------|------------|
-| Framework | Rails 8.1 (--minimal, no sprockets/ActionView) |
-| Database | SQLite3 (WAL mode via bind mount) |
-| Queue/Cache | Solid Queue + Solid Cache |
-| Bot | discordrb |
-| Scraping | Ferrum + chromedp/headless-shell + Python (Nodriver/Camoufox) |
-| LLM | RubyLLM + OpenRouter/Gemini 3.1 Flash Lite/Gemma 3 27B |
-| Docker | docker-compose (app, jobs, chrome) |
-| Testing | Minitest + FactoryBot + Mocha + WebMock |
-
----
-
-## Commands
+All commands run inside Docker. Execute from project root.
 
 ```bash
-# Docker (run from project root)
-docker-compose -f docker/docker-compose.yml up -d     # Start services
-docker-compose -f docker/docker-compose.yml logs -f  # Watch logs
-docker exec -it docker-app-1 bin/rails console        # Rails console
-docker exec -it docker-app-1 bin/rails db:migrate     # Run migrations
+# ── Docker services ──────────────────────────────────────────────────────
+docker-compose -f docker/docker-compose.yml up -d          # start app + jobs + chrome
+docker-compose -f docker/docker-compose.yml logs -f        # tail logs
+docker-compose -f docker/docker-compose.yml down           # stop everything
+docker-compose -f docker/docker-compose.yml build          # rebuild after code changes
 
-# Local development
-bin/rails jobs:work           # Workers
-bin/rails routes              # List routes
+# ── Tests (always dockerized) ────────────────────────────────────────────
+# Run all tests
+docker-compose -f docker/docker-compose.yml run --rm test
 
-# Testing
-bin/rails test                          # Run all tests
-bin/rails test test/models/             # Run all model tests
-bin/rails test test/models/social_profile_test.rb       # Single test file
-bin/rails test test/models/social_profile_test.rb:10    # Single test by line number
-bin/rails test test/jobs/discovery_job_test.rb -n test_should_enqueue_in_default_queue  # By test name
+# Run a single test file
+docker-compose -f docker/docker-compose.yml run --rm test test test/models/social_profile_test.rb
+
+# Run a single test by name (Minitest filter)
+docker-compose -f docker/docker-compose.yml run --rm test test test/models/social_profile_test.rb -n "/test_name_pattern/"
+
+# Run tests in a directory
+docker-compose -f docker/docker-compose.yml run --rm test test test/services/
+
+# ── Database (inside running app container) ──────────────────────────────
+docker-compose -f docker/docker-compose.yml exec app bin/rails db:migrate
+
+# ── Rails console (inside running app container) ─────────────────────────
+docker-compose -f docker/docker-compose.yml exec app bin/rails console
+
+# ── Job workers ──────────────────────────────────────────────────────────
+# Already started by docker-compose up via the 'jobs' service.
+# Manual restart:
+docker-compose -f docker/docker-compose.yml restart jobs
+
+# No Rubocop or linting configured — follow conventions below
 ```
 
----
-
-## Docker Architecture
+## Project Structure
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌──────────────────┐
-│  docker-app │    │ docker-jobs │    │  docker-chrome   │
-│   Puma :3000│    │ Solid Queue │    │ headless-shell   │
-│             │    │             │    │     :9222        │
-└──────┬──────┘    └──────┬──────┘    └────────┬─────────┘
-       │                  │                    │
-       └──────────────────┴──────── storage/───┘
-                     │
-         ┌───────────┴───────────┐
-         │  production.sqlite3   │
-         │  (shared bind mount)   │
-         └───────────────────────┘
+app/
+  jobs/        — ActiveJob classes (Solid Queue). Suffix: *Job
+  models/      — ActiveRecord models. Inherit ApplicationRecord
+  services/    — Business logic. Suffix: *Service. Orchestrators only
+  tools/       — LLM tool definitions
+lib/
+  llm/         — LLM clients (Gemini, Gemma, OpenRouter). Module: Llm::
+  scraping/    — Scraping services, Python bridge. Module: ScrapingServices::
+  chrome_ws_connector.rb — Chrome DevTools WebSocket connector
+config/
+  prompts/     — YAML prompt templates (system/, partials/)
+test/
+  factories/   — FactoryBot factories
+  mirrors app/ structure for test organization
 ```
-
-### Container Entrypoints
-- `bin/entrypoint` (app): Runs migrations → starts Puma
-- `bin/entrypoint-jobs` (jobs): Starts Solid Queue supervisor via `bin/jobs start`
-- `bin/jobs`: Solid Queue CLI (`start` command, NOT `supervisor`)
-
----
-
-## Key Paths
-
-- Models: `app/models/`
-- Services: `app/services/` (REQUIRED - never in controllers/models)
-- Jobs: `app/jobs/`
-- Tools: `app/tools/` (40+ LLM Tool Calling classes)
-- Scrapers: `lib/scraping/`
-- LLM: `lib/llm/`
-- Oracle: `lib/oracle/` (TMDB, IGDB, AniList)
-- Prompts: `config/prompts/`
-- Migrations: `db/migrate/`, `db/queue_migrate/`, `db/cache_migrate/`
-- Test fixtures: `test/factories/`
-- Test files mirror `app/` structure under `test/`
-
----
 
 ## Code Style
 
 ### General
-- Ruby: `snake_case` for variables/methods, `CamelCase` for classes/modules
-- Constants: `SCREAMING_SNAKE_CASE` (e.g., `SNAPSHOT_DEDUP_WINDOW = 2.hours`)
-- Add `# frozen_string_literal: true` at top of all `.rb` files
-- API: REST JSON-only (no HTML views - this is a headless Rails app)
+- Use `# frozen_string_literal: true` at top of every Ruby file
+- 2-space indentation, no tabs
+- Double quotes for strings (mixed in existing code, but prefer `"` for new code)
+- Max line length ~120 chars (soft limit)
+- No trailing whitespace
 
 ### Naming Conventions
-- Services: `XxxService` suffix (e.g., `AiRouter`, `Discovery::SocialGraphAnalyzer`)
-- Jobs: `XxxJob` suffix (e.g., `ScrapeTwitterJob`, `DiscoveryJob`)
-- Tools (LLM): descriptive names, return JSON hashes only
-- Models: singular noun (e.g., `SocialProfile`, `DiscoveredProfile`)
+- Classes: `PascalCase`. Jobs end in `Job`, services end in `Service`
+- Methods/variables: `snake_case`
+- Constants: `SCREAMING_SNAKE_CASE`
+- Database columns: `snake_case`
+- Files: `snake_case.rb` matching class name
 
-### Imports/Requires
-- Test files: `require "test_helper"` (relative to `test/`)
-- Lib files are autoloaded via `config.autoload_lib(ignore: %w[assets tasks scraping llm])`
-- `lib/scraping/` and `lib/llm/` are NOT autoloaded — require them explicitly when needed
+### Modules and Namespacing
+- Services in `app/services/` use plain classes (e.g., `AiRouter`)
+- Services in subdirectories use modules (e.g., `Discovery::ProfileClassifier`)
+- Lib classes use modules: `Llm::BaseClient`, `ScrapingServices::RateLimitHandler`
+
+### Models
+- Inherit from `ApplicationRecord`
+- Define constants with `.freeze` (e.g., `PLATFORMS = %w[twitter instagram].freeze`)
+- Use scopes for reusable queries, prefer `lambda` syntax
+- Validations at top, then associations, then scopes, then instance methods
+
+### Services
+- Business logic lives in `app/services/`, never in controllers or models
+- Stateless services use `class << self` pattern
+- Private methods go after `private` keyword
+- Return early with guard clauses (`return if ...`, `next if ...`)
+
+### Jobs
+- Inherit from `ApplicationJob`
+- Always use `queue_as :default` (or named queue)
+- Must be idempotent — use `find_or_initialize_by` / `find_or_create_by`
+- Rate-limit errors: rescue `ScrapingServices::RateLimitError`, call `retry_job wait:`
+- Never retry immediately on 403/429/captcha — backoff 6-12 hours
 
 ### Error Handling
-- Services/Jobs: rescue `StandardError` with logging, never swallow silently
-- Rate limits: never retry immediately; reschedule with 6-12 hour backoff
-- Tools (LLM): return `{success: false, message: "..."}` — **never** raise exceptions
-- Quota errors: rescue `Llm::BaseClient::QuotaExceededError` separately from generic errors
+- Custom errors nested in their module (e.g., `Llm::BaseClient::QuotaExceededError`)
+- Use `StandardError` as base, not `Exception`
+- Rescue specific errors before `StandardError`
+- Log with `[ClassName]` prefix: `Rails.logger.error "[MyClass] message"`
+- Use `ensure` for cleanup (closing browser connections, etc.)
 
-### Null vs Zero (CRITICAL)
-- **NEVER** use `default: 0` on numeric columns (likes, views, followers)
-- When API blocks/rate-limits: save as `nil`, **never** as `0`
-- **ALWAYS** use `.compact` in queries that calculate averages
+### Null vs Zero
+- Social metrics (likes, views, followers): save `nil` on failure, never `0`
+- Zero is a valid value; nil means "unknown/failed collection"
+- Use `.compact` when computing averages to exclude nils
 
-### Testing (Minitest)
-- Test class inherits from `ActiveSupport::TestCase` or `ActiveJob::TestCase`
-- Use FactoryBot methods via `include FactoryBot::Syntax::Methods` (in test_helper)
-- Use Mocha for stubs/mocks: `.stubs()`, `.expects()`, `.never`
-- Use WebMock for HTTP stubbing; `WebMock.disable_net_connect!(allow_localhost: true)` is on
-- Test names: `test "should do something descriptive" do ... end`
-- Use `assert_difference` / `assert_no_difference` for count changes
+### Testing
+- Framework: Minitest with `ActiveSupport::TestCase`
+- Factories: FactoryBot (use `build`, `create`, `build_list`, `create_list`)
+- Mocks: Mocha (`.expects`, `.stubs`)
+- HTTP stubs: WebMock (`stub_request`)
+- Test class names: `ClassNameTest` in file `test/path/class_name_test.rb`
+- Use `test "description do ... end` block syntax (not `def test_...`)
+- Use `setup` blocks for shared test data
+- Include `require 'test_helper'` at top of every test file
 
----
+### LLM / Prompt Patterns
+- Prompts live in YAML files under `config/prompts/`, not hardcoded strings
+- Always inject current timestamp in prompts: `<current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>`
+- Use `AiRouter.complete(prompt, context: :interactive|:background)` for LLM calls
+- Context `:background` routes to Gemini; `:interactive` routes to Gemma (short) or OpenRouter (long)
 
-## System Context & AI Routing (CRITICAL)
+### Scraping Patterns
+- Chrome headless via Ferrum, connecting to `docker-chrome` on port 9222
+- Host Header Bypass: set `Host: localhost` on `/json/version` requests (Chrome 120+ requirement)
+- Always close browser connections in `ensure` blocks
+- Detect blocks (DataDome, Cloudflare, captchas) → return nil, reschedule with backoff
 
-> **PROGRESSIVE DISCLOSURE**: To avoid flooding the AI context window, specific domain rules are distributed in `CONTEXT.md` files across the project.
-> **YOU MUST** read the `CONTEXT.md` file in a directory before modifying or creating files within it!
-
-### Directory Contexts (Read before modifying!)
-- **`app/services/CONTEXT.md`** -> Business/Domain Logic rules
-- **`app/jobs/CONTEXT.md`** -> Async Queue, Idempotency, Rate Limits
-- **`app/tools/CONTEXT.md`** -> LLM Tool Calling, JSON returns, parameter clamping
-- **`lib/scraping/CONTEXT.md`** -> Ferrum headless scraping, Chrome Docker bypass
-- **`lib/llm/CONTEXT.md`** -> Prompt Time Injection, OpenRouter integration
-- **`docker/CONTEXT.md`** -> Docker compose, shared volumes, Chrome Headless
-
-### Global Non-Negotiable Rules
-
-1. **Null vs Zero**: Never `default: 0` on metrics; save `nil` on failure, use `.compact` for averages
-2. **Database**: Multi-database setup (`primary`, `queue`, `cache`) pointing to single SQLite file via bind mount
-3. **Jobs**: Must be idempotent (`find_or_initialize_by`). No immediate retries on rate limits
-4. **Services**: Business logic lives in `app/services/`, never in controllers or models
-5. **Tools**: Return structured hashes only. Clamp LLM parameters. Never raise
-
-### LLM Prompt Requirement
-- All prompts must include current timestamp via ERB:
-  ```erb
-  <current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>
-  ```
-
----
-
-## Documentation
-
-- [Requirements](Requisitos_Projeto_Data_Mining.md)
-- [Implementation Plan](Plano_Prioridade_Implementacao.md)
-- [AI Strategy](docs/estrategia_multi_model_ai.md)
-- [Docker Chrome](docs/docker_chrome_setup.md)
+## Key Design Decisions
+- Headless Rails: no ActionView, no Sprockets, JSON API only
+- SQLite in WAL mode for all environments; single file, 3 connections (primary, queue, cache)
+- Solid Queue replaces Redis/Sidekiq; Solid Cache replaces Redis cache
+- Idempotent collection jobs — safe to re-run without duplicates
+- Dedup window for snapshots: 2 hours (`SNAPSHOT_DEDUP_WINDOW = 2.hours`)
