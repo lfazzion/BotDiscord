@@ -34,7 +34,13 @@ RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
       libsqlite3-0 \
       curl \
+      python3 \
+      python3-pip \
+      ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp — coleta YouTube sem browser
+RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
 
 WORKDIR /rails
 
