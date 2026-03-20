@@ -9,10 +9,16 @@ class ApplicationJob < ActiveJob::Base
   # A reschedule é feita com backoff de 6 horas para evitar re-tentativas em
   # loop que esgotariam o pool de proxies.
   # `retry_job` é usado (não `raise`) para não queimar a fila do Solid Queue.
-  rescue_from "ScrapingServices::RateLimitError" do |exception|
-    Rails.logger.warn "[ApplicationJob] Rate-limit detectado (#{self.class.name}): #{exception.message}. " \
-                      "Reagendando para +6h."
-    retry_job wait: 6.hours
+  rescue_from 'ScrapingServices::RateLimitError' do |exception|
+    retry_after = if exception.respond_to?(:retry_after)
+                    exception.retry_after
+                  else
+                    6.hours
+                  end
+
+    Rails.logger.warn "[#{self.class.name}] Rate-limit detectado: #{exception.message}. " \
+                      "Reagendando para +#{(retry_after / 3600).round}h."
+    retry_job wait: retry_after
   end
 
   # ── Erros Transitórios Genéricos ────────────────────────────────────────────

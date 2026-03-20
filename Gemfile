@@ -22,5 +22,6 @@ group :test do
 end
 
 gem 'ferrum'             # Headless Chrome via WebSocket (chromedp/headless-shell)
+gem 'typhoeus', '~> 1.4' # HTTP client com proxy e SSL support
 gem 'bootsnap', require: false
 gem 'tzinfo-data'

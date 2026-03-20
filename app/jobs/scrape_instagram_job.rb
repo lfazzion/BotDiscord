@@ -1,0 +1,92 @@
+# frozen_string_literal: true
+
+class ScrapeInstagramJob < ApplicationJob
+  queue_as :default
+
+  SNAPSHOT_DEDUP_WINDOW = 2.hours
+
+  def perform(profile_id, options = {})
+    profile = SocialProfile.find(profile_id)
+
+    return unless should_collect?(profile)
+
+    scraper_data = scrape_profile(profile, options)
+    return if scraper_data.nil?
+
+    update_profile(profile, scraper_data)
+    create_snapshot(profile, scraper_data)
+
+    profile.update!(
+      last_collected_at: Time.current,
+      collection_status: 'success'
+    )
+  rescue ScrapingServices::RateLimitError => e
+    profile&.update(collection_status: 'rate_limited') if profile
+    retry_job wait: e.retry_after
+  rescue StandardError => e
+    Rails.logger.error "[ScrapeInstagramJob] Erro ao coletar perfil #{profile_id}: #{e.message}"
+    profile&.update(collection_status: 'error') if profile
+    raise e
+  end
+
+  private
+
+  def should_collect?(profile)
+    profile.should_collect?(SNAPSHOT_DEDUP_WINDOW)
+  end
+
+  def scrape_profile(profile, options)
+    if use_python_scraper?(options)
+      scrape_with_python(profile, options)
+    else
+      scrape_with_ferrum(profile)
+    end
+  end
+
+  def use_python_scraper?(options)
+    options[:use_python] || ENV['USE_NODRIVER'] == 'true'
+  end
+
+  def scrape_with_python(profile, options)
+    runner = ScrapingServices::NodriverRunner.new
+    runner.scrape_instagram_profile(
+      profile.platform_username,
+      proxy: current_proxy(options)
+    )
+  end
+
+  def scrape_with_ferrum(profile)
+    scraper = ScrapingServices::InstagramScraper.new(proxy: current_proxy({}))
+    scraper.scrape_profile(profile.platform_username)
+  ensure
+    scraper&.close
+  end
+
+  def current_proxy(options)
+    return nil unless ENV['USE_PROXY'] == 'true'
+
+    options[:proxy]
+  end
+
+  def update_profile(profile, data)
+    profile.update!(
+      display_name: data[:full_name] || profile.display_name,
+      bio: data[:biography] || profile.bio,
+      followers_count: data[:followers_count] || profile.followers_count,
+      following_count: data[:following_count] || profile.following_count,
+      posts_count: data[:posts_count] || profile.posts_count,
+      verified: data[:is_verified] || profile.verified
+    )
+  end
+
+  def create_snapshot(profile, data)
+    ProfileSnapshot.find_or_create_by(
+      social_profile: profile,
+      captured_at: Time.current.beginning_of_hour
+    ) do |snapshot|
+      snapshot.followers_count = data[:followers_count]
+      snapshot.following_count = data[:following_count]
+      snapshot.posts_count = data[:posts_count]
+    end
+  end
+end

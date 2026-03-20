@@ -43,7 +43,7 @@ COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --from=build /rails /rails
 
 # Corrige permissões de binários antes de criar usuário
-RUN chmod +x /rails/bin/rails /rails/bin/rake 2>/dev/null || true
+RUN chmod +x /rails/bin/rails /rails/bin/rake /rails/bin/entrypoint /rails/bin/entrypoint-jobs /rails/bin/jobs 2>/dev/null || true
 
 # Diretório de banco persistido via bind mount em produção
 RUN mkdir -p storage

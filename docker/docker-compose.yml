@@ -56,7 +56,7 @@ services:
     networks:
       - internal
     entrypoint: bin/entrypoint-jobs
-    command: bin/jobs
+    command: bin/jobs start
     restart: unless-stopped
 
   # ── Chrome Headless Shell ─────────────────────────────────────────────────
@@ -71,3 +71,20 @@ services:
     networks:
       - internal
     restart: unless-stopped
+
+  # ── Python Scraper Sidecar ──────────────────────────────────────────────
+  python-scraper:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+    volumes:
+      - ../scripts/python:/app/scripts
+      - scraping-data:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  scraping-data:
