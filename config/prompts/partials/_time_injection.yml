@@ -1,0 +1,2 @@
+content: |
+  <current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>>

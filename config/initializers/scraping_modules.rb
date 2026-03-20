@@ -13,4 +13,10 @@ Rails.application.config.after_initialize do
   require Rails.root.join('lib/scraping/scrapers/ferrum_scraper_base')
   require Rails.root.join('lib/scraping/scrapers/instagram_scraper')
   require Rails.root.join('lib/scraping/scrapers/twitter_scraper')
+  # LLM Integration (lib/llm — excluído do autoload Zeitwerk)
+  require Rails.root.join('lib/llm/prompt_loader')
+  require Rails.root.join('lib/llm/base_client')
+  require Rails.root.join('lib/llm/gemini_client')
+  require Rails.root.join('lib/llm/gemma_client')
+  require Rails.root.join('lib/llm/openrouter_client')
 end

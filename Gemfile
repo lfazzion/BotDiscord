@@ -25,4 +25,5 @@ end
 gem 'ferrum'             # Headless Chrome via WebSocket (chromedp/headless-shell)
 gem 'typhoeus', '~> 1.4' # HTTP client com proxy e SSL support
 gem 'bootsnap', require: false
+gem 'ruby_llm', '~> 1.12'  # Unificada: Gemini + OpenRouter + Tool Calling
 gem 'tzinfo-data'

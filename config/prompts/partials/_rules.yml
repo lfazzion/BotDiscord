@@ -1,0 +1,6 @@
+content: |
+  REGRAS CRÍTICAS:
+  * NUNCA invente dados que não existam na entrada fornecida.
+  * Valores numéricos ausentes (likes, views, followers) devem ser retornados como null, NUNCA como 0.
+  * Quando um dado estiver faltando, declare explicitamente: "dados insuficientes".
+  * Retorne sempre JSON válido e parseável.

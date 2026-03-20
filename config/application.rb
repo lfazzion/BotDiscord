@@ -15,7 +15,7 @@ module BotDiscord
     config.session_store :cookie_store, key: '_bot_discord_session'
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store
-    config.autoload_lib(ignore: %w[assets tasks scraping])
+    config.autoload_lib(ignore: %w[assets tasks scraping llm])
 
     config.active_record.database_selector = { delay: 2.seconds }
     config.active_record.database_resolver = ActiveRecord::Middleware::DatabaseSelector::Resolver
