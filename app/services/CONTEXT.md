@@ -1,9 +1,28 @@
 # Contexto: app/services
 
-Este diretório contém a lógica de negócios e orquestração do BotDiscord.
+Lógica de negócios e orquestração do BotDiscord.
+
+## Services Existentes
+
+| Service | Descrição |
+|---------|-----------|
+| `AiRouter` | Roteador de chamadas LLM (Gemini/Gemma/OpenRouter) |
+| `Discovery::ProfileClassifier` | Classifica perfis descobertos por nicho/qualidade |
+| `Discovery::SocialGraphAnalyzer` | Analisa conexões do grafo social |
 
 ## Regras Críticas para IA
-1. **Localização Exclusiva de Lógica**: A lógica de domínio e negócios **DEVE** residir aqui em `app/services/`. NUNCA coloque lógicas complexas em Controllers ou Models.
-2. **Nomenclatura Padrão**: Sempre utilize o sufixo `Service` para classes neste diretório (ex: `InfluencerProfileService`).
-3. **Padrão de Criação**: Os serviços devem servir como orquestradores que utilizam models e outros serviços subjacentes para completar um fluxo de trabalho (ex: `TwitterCollectJob` chamaria um `TwitterCollectService`).
-4. **Null vs Zero**: Ao salvar métricas sociais (likes, views, followers), salve `nil` quando a coleta falhar. Nunca use `0` como valor padrão. Use `.compact` em queries de média.
+
+1. **Lógica exclusiva aqui**: NUNCA colocar lógica de negócio em Controllers ou Models
+2. **Sufixo Service**: `InfluencerProfileService`, `AiRouter`
+3. **Orquestradores**: Services chamam models e outros services — não acessam banco diretamente com SQL cru
+4. **Serviços stateless**: Usar `class << self` quando não precisam de estado de instância
+5. **Early return**: Preferir guard clauses (`return if ...`, `next if ...`)
+ 6. **Null vs Zero**: Ver regra cross-cutting #3 no AGENTS.md
+ 7. **Métodos privados**: Depois da keyword `private`
+
+## Cross-References
+
+- Models: `app/models/CONTEXT.md` — dados que os services manipulam
+- Jobs: `app/jobs/CONTEXT.md` — como os services são chamados
+- LLM: `lib/llm/CONTEXT.md` — como o AiRouter integra com modelos
+- Prompts: `config/prompts/CONTEXT.md` — templates usados pelo AiRouter

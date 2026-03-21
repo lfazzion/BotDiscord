@@ -1,19 +1,29 @@
 # Contexto: app/jobs
 
-Este diretório contém os jobs executados em background pelo Solid Queue.
+Jobs executados em background pelo Solid Queue.
 
-## Estrutura de Migrations
+## Jobs Existentes
 
-- `db/migrate/`: Tabelas da aplicação (SocialProfile, SocialPost, ProfileSnapshot)
-- `db/queue_migrate/`: Tabelas do Solid Queue (jobs, executions, processes, semaphores)
-- `db/cache_migrate/`: Tabelas do Solid Cache
+| Job | Plataforma | Descrição |
+|-----|-----------|-----------|
+| `ScrapeTwitterJob` | Twitter | Coleta posts e métricas de perfis |
+| `ScrapeInstagramJob` | Instagram | Coleta posts e métricas de perfis |
+| `ScrapeYoutubeJob` | YouTube | Coleta vídeos e métricas de canais |
+| `RssCollectJob` | RSS | Coleta artigos de feeds RSS |
+| `DiscoveryJob` | Multi | Descobre e classifica novos perfis via grafo social |
 
 ## Regras Críticas para IA
-1. **Assincronicidade e Fila**: O projeto utiliza Solid Queue. Jobs devem ser projetados para rodar de forma assíncrona.
-2. **Nomenclatura Padrão**: Sempre utilize o sufixo `Job` (ex: `TwitterCollectJob`).
-3. **Idempotência Obrigatória**: Jobs devem ser idempotentes. Use `find_or_initialize_by(platform_post_id)` ou mecanismos similares para evitar duplicações caso um job rode mais de uma vez.
-4. **Tratamento de Rate Limits**:
-   - Identifique comportamentos como HTTP `RateLimit`, erro `403` ou Captchas.
-   - **NUNCA** tente um retry imediato. Cancele/silencie o erro e **agende o job novamente com backoff de 6 a 12 horas**.
-5. **Snapshot Dedup Window**: Na coleta de métricas, ignore salvamentos caso a janela de tempo desde a última coleta seja menor que 1 a 2 horas.
-6. **Database Connection**: Jobs usam conexão `queue` para tabelas do Solid Queue. Certifique-se de que migrations de queue estão em `db/queue_migrate/`.
+
+1. **Idempotência obrigatória**: Usar `find_or_initialize_by(platform_post_id)` — jobs podem rodar múltiplas vezes
+2. **Nunca retry imediato em 403/429/captcha**: Backoff de 6-12 horas via `retry_job wait:`
+3. **Snapshot dedup window**: Ignorar salvamento se última coleta foi há menos de 2 horas
+4. **Inheritance**: Herdar de `ApplicationJob`, usar `queue_as :default`
+ 5. **Null vs Zero**: Ver regra cross-cutting #3 no AGENTS.md
+ 6. **Backoff**: Ver regra cross-cutting #4 no AGENTS.md
+ 7. **Logging**: Ver regra cross-cutting #6 no AGENTS.md
+
+## Cross-References
+
+- Models: `app/models/CONTEXT.md` — estrutura dos dados persistidos
+- Services: `app/services/CONTEXT.md` — lógica de negócio chamada pelos jobs
+- Scraping: `lib/scraping/CONTEXT.md` — infraestrutura de scraping

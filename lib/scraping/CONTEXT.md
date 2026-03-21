@@ -1,8 +1,8 @@
 # Contexto: lib/scraping
 
-Este diretório lida com coleta de dados e scraping (Ferrum + Chrome headless).
+Coleta de dados e scraping (Ferrum + Chrome headless + Python bridge).
 
-## Arquitetura de Scraping
+## Arquitetura
 
 ```
 app (Ruby) ──WebSocket──> docker-chrome (Chrome headless)
@@ -12,8 +12,24 @@ app (Ruby) ──WebSocket──> docker-chrome (Chrome headless)
                         :9222 (DevTools Protocol)
 ```
 
+## Estrutura
+
+| Diretório | Descrição |
+|-----------|-----------|
+| `scrapers/` | Scrapers baseados em Ferrum (twitter, instagram) |
+| `services/` | Serviços HTTP (stealth client, RSS, YouTube) |
+| `python_bridge/` | Ponte Ruby→Python (nodriver, camoufox, curl-impersonate) |
+
 ## Regras Críticas de Scraping para IA
-1. **Container Chrome**: O scrape roda usando Ferrum conectando ao container `docker-chrome` (chromedp/headless-shell).
-2. **Variáveis de Ambiente**: `CHROME_HOST=chrome` e `CHROME_PORT=9222` são passadas via docker-compose.
-3. **Host Header Bypass**: É **OBRIGATÓRIO** substituir o header `Host` para `localhost` ao conectar no `/json/version`. Isso contorna a rejeição do Chrome 120+ a headers de origin.
-4. **Identificação de Bloqueios**: Captchas, Cloudflare loops ou 403 Forbidden devem retornar `nil` e agendar retry em 6-12 horas.
+
+1. **Chrome container**: Ferrum conecta ao `docker-chrome` (chromedp/headless-shell) na rede interna
+2. **Host Header Bypass**: OBRIGATÓRIO substituir header `Host` para `localhost` em `/json/version`
+3. **Bloqueios → backoff**: Ver regra cross-cutting #4 no AGENTS.md
+4. **Ensure close**: Ver regra cross-cutting #5 no AGENTS.md
+5. **Python bridge**: Scripts Python em `scripts/python/`, executados via Ruby bridge — nunca chamar `python` diretamente
+
+## Cross-References
+
+- Jobs: `app/jobs/CONTEXT.md` — jobs que disparam scraping
+- Scripts: `scripts/python/CONTEXT.md` — scripts Python executados pelo bridge
+- Docker: `docker/CONTEXT.md` — configuração do container Chrome

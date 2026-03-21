@@ -1,12 +1,25 @@
-# Contexto: lib/llm e Prompts
+# Contexto: lib/llm
 
-Este diretório contém a lógica pura de integração com LLMs via OpenRouter, RubyLLM (Gemini, Gemma), bem como chamadas base à IA.
-*(Arquivos de prompts em `config/prompts/`)*
+Integração pura com LLMs via OpenRouter, Gemini, Gemma.
+
+## Arquivos
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `base_client.rb` | Classe base com error handling e retry |
+| `gemini_client.rb` | Cliente Gemini 3.1 Flash (tier: background) |
+| `gemma_client.rb` | Cliente Gemma 3 27B/12B (tier: interactive short) |
+| `openrouter_client.rb` | Cliente OpenRouter (tier: interactive long) |
+| `prompt_loader.rb` | Carrega templates YAML de `config/prompts/` |
 
 ## Regras Críticas para IA
-1. **Time Injection (Injeção de Tempo) - CRÍTICO**: Todo prompt principal deve receber timestamp atual:
-   ```erb
-   <current_datetime: <%= Time.current.in_time_zone("America/Sao_Paulo").to_s %>
-   ```
-2. **Formatação de JSON**: Parser deve exigir retornos consistentes do LLM.
-3. **Model Selection**: Observar tier correto (Gemini 3.1 Flash / Gemma 3 27B / Gemma 3 12B).
+
+ 1. **Time Injection**: Ver regra cross-cutting #8 no AGENTS.md
+ 2. **Usar PromptLoader**: `PromptLoader.load('system/analysis')` — nunca ler YAML diretamente
+ 3. **Roteamento**: `AiRouter.complete(prompt, context: :interactive|:background)` — ver `app/services/CONTEXT.md`
+ 4. **Error handling**: `QuotaExceededError`, `RateLimitError` — classes aninhadas no módulo
+
+## Cross-References
+
+- Services: `app/services/CONTEXT.md` — AiRouter orquestra chamadas
+- Prompts: `config/prompts/CONTEXT.md` — templates carregados pelo PromptLoader
