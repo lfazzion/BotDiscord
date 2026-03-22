@@ -31,7 +31,7 @@ Nova feature, refatoração significativa, integração nova, bug complexo.
 
 ```xml
 <task>
-Preciso implementar [DESCRIÇÃO DA TAREFA].
+Você precisa implementar [DESCRIÇÃO DA TAREFA].
 Faça uma investigação completa antes de propor qualquer código.
 </task>
 
@@ -39,7 +39,7 @@ Faça uma investigação completa antes de propor qualquer código.
 1. Leia TODOS os arquivos relevantes do codebase profundamente — não superficialmente.
 2. Consulte a Routing Table do AGENTS.md para saber quais CONTEXT.md ler.
 3. Encontre padrões de implementação similares já existentes no projeto.
-4. Se necessário, busque documentação externa sobre as tecnologias envolvidas.
+4. Busque na internet as documentações mais recentes sobre as tecnologias envolvidas juntamente com exemplos de código em sites como GitHub, Stack Overflow, etc.
 5. Identifique constraints do projeto (Docker, SQLite WAL, Solid Queue, etc.).
 6. Faça chamadas paralelas de ferramentas sempre que as leituras forem independentes.
 </instructions>

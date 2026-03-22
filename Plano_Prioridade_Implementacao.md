@@ -74,3 +74,16 @@
     *   Testes isolados em chamadas Gemini Imagen 3/DALL-E criando assets bases, gerando imagens inspiracionais de thumbs e moodboards a partir das descrições analisadas do concorrente p/ agregar nos Digests p/ influenciadora.
 4.  **A Backup Simples de Um Banco Simples:**
     *   Jobs shell que invocam `cp` nas pastilhas absolutas `/data/*.sqlite3` copiando p/ volumes protegidos cloud. (Garantia por rodar WAL em modo de cópia resilientes live). Mantenha `credentials.yml.enc` e a master.key trancadas num gerenciador de secrets à parte da máquina rodando.
+
+---
+
+## 📋 Observações Retroativas — Fase 2 (Pós-Implementação)
+
+*Adições identificadas após revisão de alinhamento. Fase já concluída — itens servem como referência para futuras melhorias no motor de coleta.*
+
+1.  **Seletores Estruturais nos Scrapers:**
+    *   NUNCA hardcoded CSS selectors (`a.mdc-basic-feed-item`). Identifique artigos e perfis por propriedades estruturais que sobrevivem a redesigns: agrupamento de links por classe CSS, comprimento médio de slug das URLs do grupo, e tamanhos descritivos de títulos vs links de navegação. Seletor quebrou? O scraper degrada, não morre.
+2.  **Graceful Degradation em Cascata:**
+    *   Se o scraper falhou (bloqueio, timeout, DOM quebrado), caia em cascata: (1) tentar `og:description` / OpenGraph metadata via HTTP simples; (2) extrair título da URL; (3) registrar como gap no banco com flag `source_degraded: true` para o LLM saber que aquele dado tem qualidade reduzida.
+3.  **Stealth Patches no Ferrum (Anti-Bot Detection):**
+    *   Injetar JS anti-detecção via CDP `Page.addScriptToEvaluateOnNewDocument` ANTES de qualquer script da página: falsificar `navigator.webdriver = false`, patchar `navigator.plugins`, spoofar WebGL renderer ("NVIDIA GeForce GTX 1080"), e ativar flag `--disable-blink-features=AutomationControlled`.
