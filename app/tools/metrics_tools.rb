@@ -64,12 +64,29 @@ class ProfileRankingTool < ToolBase
       profiles = profiles.order(followers_count: :desc).limit(limit)
       success(profiles.map { |p| format_profile(p) })
     when 'engagement'
-      profiles = SocialProfile.where.not(followers_count: nil)
-      profiles = profiles.by_platform(platform) if platform.present?
-      ranked = profiles.select { |p| p.engagement_rate.present? }
-                       .sort_by { |p| -p.engagement_rate }
-                       .first(limit)
-      success(ranked.map { |p| format_profile(p).merge(engagement_rate: p.engagement_rate) })
+      profiles = SocialProfile
+                 .where.not(followers_count: nil)
+                 .where('followers_count > 0')
+                 .joins(:social_posts)
+                 .group('social_profiles.id')
+                 .select(<<~SQL.squish)
+                   social_profiles.*,
+                   (
+                     SELECT AVG(sub.total_engagement) FROM (
+                       SELECT (COALESCE(p.likes_count, 0) + COALESCE(p.comments_count, 0) + COALESCE(p.shares_count, 0)) AS total_engagement
+                       FROM social_posts p
+                       WHERE p.social_profile_id = social_profiles.id
+                       ORDER BY p.id DESC
+                       LIMIT 10
+                     ) sub
+                   ) / social_profiles.followers_count * 100 AS computed_engagement_rate
+                 SQL
+      profiles = profiles.where(platform: platform) if platform.present?
+      profiles = profiles.having('computed_engagement_rate IS NOT NULL')
+                         .order(Arel.sql('computed_engagement_rate DESC'))
+                         .limit(limit)
+
+      success(profiles.map { |p| format_profile(p).merge(engagement_rate: p.computed_engagement_rate.round(2)) })
     else
       error("Métrica inválida: #{metric}. Use 'followers' ou 'engagement'.")
     end

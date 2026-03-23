@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class FridayIdeationJob < ApplicationJob
+  include DigestChannel
+
   queue_as :default
 
   def perform
@@ -14,21 +16,6 @@ class FridayIdeationJob < ApplicationJob
   end
 
   private
-
-  def ensure_digest_channel
-    channel_id = ENV['DISCORD_DIGEST_CHANNEL_ID']
-    return channel_id if channel_id.present?
-
-    guilds = DiscordApiClient.get_bot_guilds
-    return nil if guilds.empty?
-
-    guild_id = guilds.first['id']
-    channel = DiscordApiClient.create_text_channel(guild_id, 'digest-updates')
-    channel_id = channel['id']
-
-    Rails.logger.info "[FridayIdeationJob] Canal digest criado: #{channel_id}"
-    channel_id
-  end
 
   def build_ideation_digest
     lines = ["**💡 Ideias da Semana — #{Date.current.strftime('%d/%m/%Y')}**"]
@@ -61,20 +48,12 @@ class FridayIdeationJob < ApplicationJob
       lines << ''
     end
 
-    prompt = Llm::PromptLoader.load('chatbot', user_message: build_context(lines))
+    prompt = Llm::PromptLoader.load('ideation_digest', context: lines.join("\n"))
     response = AiRouter.complete(prompt, context: :background)
 
     lines << '**Sugestões de conteúdo:**'
     lines << response.content.to_s
 
     lines.join("\n")
-  end
-
-  def build_context(lines)
-    <<~CONTEXT
-      Com base nos dados abaixo, sugira 3 ideias de conteúdo para influenciadores digitais:
-
-      #{lines.join("\n")}
-    CONTEXT
   end
 end

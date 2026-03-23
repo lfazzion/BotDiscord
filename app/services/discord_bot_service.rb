@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
 require 'discordrb'
+require 'concurrent'
 
 class DiscordBotService
   class << self
     def start
+      @running = Concurrent::AtomicBoolean.new(true)
+
       bot = Discordrb::Bot.new(
         token: ENV['DISCORD_BOT_TOKEN'],
         intents: %i[messages message_content]
@@ -20,15 +23,30 @@ class DiscordBotService
         handle_message(event)
       end
 
-      Thread.new do
-        loop do
+      cleanup_thread = Thread.new do
+        while @running.true?
           sleep 300
           ChatSessionManager.cleanup_expired
         end
       end
 
+      Signal.trap('TERM') do
+        Rails.logger.info '[DiscordBotService] Recebido TERM, parando...'
+        @running.make_false
+        bot.stop
+      end
+
+      Signal.trap('INT') do
+        Rails.logger.info '[DiscordBotService] Recebido INT, parando...'
+        @running.make_false
+        bot.stop
+      end
+
       Rails.logger.info '[DiscordBotService] Iniciando bot...'
       bot.run
+    ensure
+      @running&.make_false
+      cleanup_thread&.join(5)
     end
 
     def handle_message(event)
@@ -38,8 +56,9 @@ class DiscordBotService
 
       return if content.empty?
 
+      typing_running = Concurrent::AtomicBoolean.new(true)
       typing_thread = Thread.new do
-        loop do
+        while typing_running.true?
           event.channel.start_typing
           sleep 4
         end
@@ -63,7 +82,8 @@ class DiscordBotService
         Rails.logger.error "[DiscordBotService] Erro: #{e.message}"
         event.respond('⚠️ Erro ao processar. Tente novamente.')
       ensure
-        typing_thread&.kill
+        typing_running.make_false
+        typing_thread&.join(1)
       end
     end
   end
