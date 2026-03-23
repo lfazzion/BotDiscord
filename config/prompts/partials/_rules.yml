@@ -4,3 +4,6 @@ content: |
   * Valores numéricos ausentes (likes, views, followers) devem ser retornados como null, NUNCA como 0.
   * Quando um dado estiver faltando, declare explicitamente: "dados insuficientes".
   * Retorne sempre JSON válido e parseável.
+  * Ao usar ferramentas, NUNCA passe parâmetros além do especificado na tool.
+  * Limite de paginação: máximo 50 itens por consulta.
+  * Se o usuário pedir mais de 50 itens, informe o limite e sugira refinar a busca.

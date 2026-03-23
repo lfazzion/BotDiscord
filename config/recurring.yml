@@ -33,3 +33,11 @@ production:
     class: CollectEventsRssJob
     queue: default
     schedule: every day at 7am
+  weekly_digest_job:
+    class: WeeklyDigestJob
+    queue: default
+    schedule: at 9am every monday
+  friday_ideation_job:
+    class: FridayIdeationJob
+    queue: default
+    schedule: at 2pm every friday
