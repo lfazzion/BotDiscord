@@ -98,7 +98,6 @@ services:
       RAILS_ENV: test
       CHROME_HOST: chrome
       CHROME_PORT: "9222"
-      BUNDLE_FROZEN: "true"
     volumes:
       - ../:/rails
     networks:
