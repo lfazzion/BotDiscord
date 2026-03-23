@@ -137,4 +137,14 @@ class CurlImpersonateClientTest < ActiveSupport::TestCase
     result = client.get('https://example.com')
     assert_nil result
   end
+
+  test 'raises Timeout::Error when command times out' do
+    client = ScrapingServices::CurlImpersonateClient.new
+
+    Timeout.expects(:timeout).raises(Timeout::Error)
+
+    assert_raises(Timeout::Error) do
+      client.get('https://example.com')
+    end
+  end
 end

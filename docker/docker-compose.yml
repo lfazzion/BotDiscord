@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Rede interna fechada — nenhum serviço expõe porta desnecessária
 networks:
   internal:

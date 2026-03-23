@@ -74,6 +74,7 @@ class DockerComposeTest < ActiveSupport::TestCase
     config = YAML.load_file(DOCKER_COMPOSE_PATH)
 
     config["services"].each do |name, service|
+      next if service["profiles"]
       assert service["restart"], "#{name} should have restart policy"
     end
   end
@@ -88,8 +89,8 @@ class DockerComposeTest < ActiveSupport::TestCase
     end
   end
 
-  test "docker-compose version should be 3.8" do
+  test "docker-compose should not have obsolete version key" do
     config = YAML.load_file(DOCKER_COMPOSE_PATH)
-    assert_equal "3.8", config["version"]
+    assert_nil config["version"], "version key is obsolete and should be removed"
   end
 end

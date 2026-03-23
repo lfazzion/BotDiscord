@@ -2,6 +2,7 @@
 
 require 'open3'
 require 'json'
+require 'timeout'
 
 module ScrapingServices
   class YoutubeScraperService
@@ -63,7 +64,7 @@ module ScrapingServices
       end
 
       def execute_yt_dlp(command)
-        Open3.capture3(*command, timeout: 120)
+        Timeout.timeout(120) { Open3.capture3(*command) }
       end
 
       def parse_metadata(data)

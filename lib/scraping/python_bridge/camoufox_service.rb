@@ -2,6 +2,7 @@
 
 require 'open3'
 require 'json'
+require 'timeout'
 
 module ScrapingServices
   class CamoufoxService
@@ -33,7 +34,7 @@ module ScrapingServices
       end
 
       def execute(command)
-        stdout, stderr, status = Open3.capture3(*command, timeout: 180)
+        stdout, stderr, status = Timeout.timeout(180) { Open3.capture3(*command) }
 
         if rate_limit?(stderr)
           raise RateLimitHandler.handle_error(

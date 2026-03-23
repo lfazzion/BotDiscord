@@ -2,6 +2,7 @@
 
 require 'open3'
 require 'json'
+require 'timeout'
 
 module ScrapingServices
   class CurlImpersonateClient
@@ -46,7 +47,7 @@ module ScrapingServices
     end
 
     def execute(command)
-      stdout, stderr, status = Open3.capture3(*command, timeout: 60)
+      stdout, stderr, status = Timeout.timeout(60) { Open3.capture3(*command) }
 
       if rate_limit?(stdout, stderr)
         raise RateLimitHandler.handle_error(

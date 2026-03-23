@@ -44,4 +44,14 @@ class YoutubeScraperServiceTest < ActiveSupport::TestCase
     videos = ScrapingServices::YoutubeScraperService.send(:parse_video_list, '')
     assert_empty videos
   end
+
+  test 'returns nil when command times out' do
+    Timeout.expects(:timeout).raises(Timeout::Error)
+
+    result = ScrapingServices::YoutubeScraperService.extract_channel_metadata(
+      'https://www.youtube.com/@YouTube'
+    )
+
+    assert_nil result
+  end
 end

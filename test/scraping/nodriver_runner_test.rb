@@ -10,11 +10,11 @@ class NodriverRunnerTest < ActiveSupport::TestCase
       'testuser', '--mode', 'profile'
     ]
 
-    Open3.expects(:capture3).with(*expected_cmd, timeout: 180).returns([
-                                                                         '{"user_id": "123", "username": "testuser", "full_name": "Test"}',
-                                                                         '',
-                                                                         stub(success?: true)
-                                                                       ])
+    Open3.expects(:capture3).with(*expected_cmd).returns([
+                                                            '{"user_id": "123", "username": "testuser", "full_name": "Test"}',
+                                                            '',
+                                                            stub(success?: true)
+                                                          ])
 
     result = ScrapingServices::NodriverRunner.scrape_instagram_profile('testuser')
 
@@ -30,11 +30,11 @@ class NodriverRunnerTest < ActiveSupport::TestCase
       'testuser', '--mode', 'posts', '--limit', '6'
     ]
 
-    Open3.expects(:capture3).with(*expected_cmd, timeout: 180).returns([
-                                                                         '[{"platform_post_id": "p1", "caption": "Post 1"}]',
-                                                                         '',
-                                                                         stub(success?: true)
-                                                                       ])
+    Open3.expects(:capture3).with(*expected_cmd).returns([
+                                                            '[{"platform_post_id": "p1", "caption": "Post 1"}]',
+                                                            '',
+                                                            stub(success?: true)
+                                                          ])
 
     result = ScrapingServices::NodriverRunner.scrape_instagram_posts('testuser', limit: 6)
 
@@ -49,11 +49,11 @@ class NodriverRunnerTest < ActiveSupport::TestCase
       'testuser', '--mode', 'posts', '--limit', '12', '--proxy', 'http://proxy:8080'
     ]
 
-    Open3.expects(:capture3).with(*expected_cmd, timeout: 180).returns([
-                                                                         '[]',
-                                                                         '',
-                                                                         stub(success?: true)
-                                                                       ])
+    Open3.expects(:capture3).with(*expected_cmd).returns([
+                                                            '[]',
+                                                            '',
+                                                            stub(success?: true)
+                                                          ])
 
     result = ScrapingServices::NodriverRunner.scrape_instagram_posts('testuser', proxy: 'http://proxy:8080')
     assert_empty result
@@ -66,11 +66,11 @@ class NodriverRunnerTest < ActiveSupport::TestCase
       'twitteruser', '--mode', 'profile'
     ]
 
-    Open3.expects(:capture3).with(*expected_cmd, timeout: 180).returns([
-                                                                         '{"user_id": "456", "username": "twitteruser", "full_name": "Twitter User"}',
-                                                                         '',
-                                                                         stub(success?: true)
-                                                                       ])
+    Open3.expects(:capture3).with(*expected_cmd).returns([
+                                                            '{"user_id": "456", "username": "twitteruser", "full_name": "Twitter User"}',
+                                                            '',
+                                                            stub(success?: true)
+                                                          ])
 
     result = ScrapingServices::NodriverRunner.scrape_twitter_profile('twitteruser')
 
@@ -122,5 +122,13 @@ class NodriverRunnerTest < ActiveSupport::TestCase
 
     result = ScrapingServices::NodriverRunner.scrape_instagram_profile('testuser')
     assert_nil result
+  end
+
+  test 'raises Timeout::Error when command times out' do
+    Timeout.expects(:timeout).raises(Timeout::Error)
+
+    assert_raises(Timeout::Error) do
+      ScrapingServices::NodriverRunner.scrape_instagram_profile('testuser')
+    end
   end
 end

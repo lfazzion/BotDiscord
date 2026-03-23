@@ -10,11 +10,11 @@ class CamoufoxServiceTest < ActiveSupport::TestCase
       'https://example.com'
     ]
 
-    Open3.expects(:capture3).with(*expected_cmd, timeout: 180).returns([
-                                                                         '{"title": "Example", "content": "Hello world"}',
-                                                                         '',
-                                                                         stub(success?: true)
-                                                                       ])
+    Open3.expects(:capture3).with(*expected_cmd).returns([
+                                                            '{"title": "Example", "content": "Hello world"}',
+                                                            '',
+                                                            stub(success?: true)
+                                                          ])
 
     result = ScrapingServices::CamoufoxService.scrape_url('https://example.com')
 
@@ -31,11 +31,11 @@ class CamoufoxServiceTest < ActiveSupport::TestCase
       '--proxy', 'http://proxy:8080'
     ]
 
-    Open3.expects(:capture3).with(*expected_cmd, timeout: 180).returns([
-                                                                         '{"title": "Example"}',
-                                                                         '',
-                                                                         stub(success?: true)
-                                                                       ])
+    Open3.expects(:capture3).with(*expected_cmd).returns([
+                                                            '{"title": "Example"}',
+                                                            '',
+                                                            stub(success?: true)
+                                                          ])
 
     result = ScrapingServices::CamoufoxService.scrape_url('https://example.com', proxy: 'http://proxy:8080')
     assert_not_nil result
@@ -91,5 +91,13 @@ class CamoufoxServiceTest < ActiveSupport::TestCase
 
     result = ScrapingServices::CamoufoxService.scrape_url('https://example.com')
     assert_nil result
+  end
+
+  test 'raises Timeout::Error when command times out' do
+    Timeout.expects(:timeout).raises(Timeout::Error)
+
+    assert_raises(Timeout::Error) do
+      ScrapingServices::CamoufoxService.scrape_url('https://example.com')
+    end
   end
 end
