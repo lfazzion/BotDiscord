@@ -17,3 +17,19 @@ production:
     class: DiscoveryJob
     queue: default
     schedule: at 3am every tuesday and friday
+  collect_tmdb_catalog_job:
+    class: CollectTmdbCatalogJob
+    queue: default
+    schedule: at 4am every monday
+  collect_igdb_catalog_job:
+    class: CollectIgdbCatalogJob
+    queue: default
+    schedule: at 4am every tuesday
+  collect_anilist_catalog_job:
+    class: CollectAnilistCatalogJob
+    queue: default
+    schedule: at 4am every wednesday
+  collect_events_rss_job:
+    class: CollectEventsRssJob
+    queue: default
+    schedule: every day at 7am

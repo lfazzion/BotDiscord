@@ -1,0 +1,6 @@
+.git
+tmp
+log
+storage
+*.md
+docs

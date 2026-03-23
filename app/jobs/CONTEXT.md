@@ -11,6 +11,10 @@ Jobs executados em background pelo Solid Queue.
 | `ScrapeYoutubeJob` | YouTube | Coleta vídeos e métricas de canais |
 | `RssCollectJob` | RSS | Coleta artigos de feeds RSS |
 | `DiscoveryJob` | Multi | Descobre e classifica novos perfis via grafo social |
+| `CollectTmdbCatalogJob` | TMDB | Coleta filmes e séries do TMDB |
+| `CollectIgdbCatalogJob` | IGDB | Coleta jogos populares do IGDB |
+| `CollectAnilistCatalogJob` | Anilist | Coleta animes trending do Anilist |
+| `CollectEventsRssJob` | RSS | Coleta eventos nerd via Google News RSS |
 
 ## Regras Críticas para IA
 

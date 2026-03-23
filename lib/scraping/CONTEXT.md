@@ -17,7 +17,7 @@ app (Ruby) ──WebSocket──> docker-chrome (Chrome headless)
 | Diretório | Descrição |
 |-----------|-----------|
 | `scrapers/` | Scrapers baseados em Ferrum (twitter, instagram) |
-| `services/` | Serviços HTTP (stealth client, RSS, YouTube) |
+| `services/` | Serviços HTTP (stealth client, RSS, YouTube, TMDB, IGDB, Anilist) |
 | `python_bridge/` | Ponte Ruby→Python (nodriver, camoufox, curl-impersonate) |
 
 ## Regras Críticas de Scraping para IA

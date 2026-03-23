@@ -11,6 +11,8 @@ Models ActiveRecord do projeto. Herdam de `ApplicationRecord`.
 | `ProfileSnapshot` | Snapshot de métricas em um momento | `social_profile_id` + `collected_at` |
 | `DiscoveredProfile` | Perfil descoberto via grafo social (pendente de classificação) | `platform` + `username` |
 | `NewsArticle` | Artigo RSS coletado | `url` |
+| `ExternalCatalog` | Item de catálogo de fontes externas (TMDB, IGDB, Anilist) | `source` + `external_id` |
+| `Event` | Evento nerd brasileiro (RSS, manual) | `source_url` |
 
 ## Regras Críticas para IA
 

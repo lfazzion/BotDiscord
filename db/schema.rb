@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 20_260_315_000_002) do
+ActiveRecord::Schema[8.1].define(version: 20_260_322_000_002) do
   create_table 'profile_snapshots', force: :cascade do |t|
     t.datetime 'created_at', null: false
     t.bigint 'followers_count'
@@ -210,6 +210,63 @@ ActiveRecord::Schema[8.1].define(version: 20_260_315_000_002) do
     t.index ['expires_at'], name: 'index_solid_queue_semaphores_on_expires_at'
     t.index %w[key value], name: 'index_solid_queue_semaphores_on_key_and_value'
     t.index ['key'], name: 'index_solid_queue_semaphores_on_key', unique: true
+  end
+
+  create_table 'news_articles', force: :cascade do |t|
+    t.string 'title'
+    t.text 'description'
+    t.string 'link', null: false
+    t.datetime 'pub_date'
+    t.string 'source'
+    t.string 'query_used'
+    t.datetime 'created_at', null: false
+    t.datetime 'updated_at', null: false
+    t.index ['link'], name: 'index_news_articles_on_link', unique: true
+    t.index ['pub_date'], name: 'index_news_articles_on_pub_date'
+    t.index ['source'], name: 'index_news_articles_on_source'
+  end
+
+  create_table 'external_catalogs', force: :cascade do |t|
+    t.string 'source', null: false
+    t.string 'external_id', null: false
+    t.string 'title', null: false
+    t.string 'media_type'
+    t.text 'description'
+    t.date 'release_date'
+    t.float 'popularity'
+    t.float 'vote_average'
+    t.integer 'vote_count'
+    t.string 'poster_url'
+    t.string 'genres'
+    t.json 'metadata', default: {}
+    t.string 'original_language'
+    t.boolean 'adult', default: false
+    t.string 'status'
+    t.datetime 'created_at', null: false
+    t.datetime 'updated_at', null: false
+    t.index ['media_type'], name: 'index_external_catalogs_on_media_type'
+    t.index ['release_date'], name: 'index_external_catalogs_on_release_date'
+    t.index ['source'], name: 'index_external_catalogs_on_source'
+    t.index %w[source external_id], name: 'index_external_catalogs_on_source_and_external_id', unique: true
+  end
+
+  create_table 'events', force: :cascade do |t|
+    t.string 'title', null: false
+    t.text 'description'
+    t.string 'source'
+    t.string 'source_url'
+    t.string 'location'
+    t.date 'start_date'
+    t.date 'end_date'
+    t.string 'event_type'
+    t.string 'image_url'
+    t.string 'organizer'
+    t.datetime 'created_at', null: false
+    t.datetime 'updated_at', null: false
+    t.index ['event_type'], name: 'index_events_on_event_type'
+    t.index ['location'], name: 'index_events_on_location'
+    t.index ['source_url'], name: 'index_events_on_source_url', unique: true
+    t.index ['start_date'], name: 'index_events_on_start_date'
   end
 
   add_foreign_key 'profile_snapshots', 'social_profiles'
