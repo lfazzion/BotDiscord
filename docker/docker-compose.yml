@@ -92,13 +92,13 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    user: root
     env_file:
       - ../.env
     environment:
       RAILS_ENV: test
       CHROME_HOST: chrome
       CHROME_PORT: "9222"
-      BUNDLE_FROZEN: "false"
     volumes:
       - ../:/rails
     networks:
