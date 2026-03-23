@@ -10,6 +10,13 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **[2026-03-23]** Fase 5 implementada: UI Autônoma e Chatbot Tool Caller.
+  - 16 tools em `app/tools/` (herdam de `RubyLLM::Tool` via `ToolBase`)
+  - Discord Bot como serviço dedicado no compose (`discord-bot`)
+  - Sessões em memória com TTL 30min via `ChatSessionManager`
+  - Digest semanal e de sexta via `WeeklyDigestJob` e `FridayIdeationJob`
+  - Canal de digest criado automaticamente se não existir
+  - 371 testes passando (0 failures, 0 errors)
 - **[2026-03-22]** Setup inicial do repositório: Headless Rails 8.1 + SQLite WAL +
   Solid Queue/Cache. Estrutura de pastas, AGENTS.md com routing table, e docs de
   estratégia (comparativo IA, scraping gratuito, Docker Chrome) já criados.
@@ -22,6 +29,10 @@
 
 | Data | Padrão | Contexto |
 |------|--------|----------|
+| 2026-03-23 | discordrb ~> 3.7 (3.7.2) — não existe ~> 3.8 | Versão mais recente compatível com Ruby 4.0 |
+| 2026-03-23 | Tools em arquivos únicos (múltiplas classes por arquivo) + requires explícitos em testes | Rails autoload não resolve classes de arquivos com nome diferente da classe |
+| 2026-03-23 | Partials de prompt devem ter prefixo `_` | PromptLoader procura `_nome.yml` em `partials/` |
+| 2026-03-23 | Discord Bot como serviço dedicado no compose | Isolamento total do Puma/Solid Queue, restart independente |
 | 2026-03-14 | Solid Queue em vez de Sidekiq/Redis | Reduz dependências; SQLite single-file |
 | 2026-03-14 | Solid Cache em vez de Redis Cache | Mesma razão acima |
 | 2026-03-14 | SQLite WAL mode, 3 databases (primary, queue, cache) | Performance + simplicidade operacional |
@@ -38,7 +49,8 @@
 
 | Data | Bug / Anti-padrão | Causa Raiz | Resolução |
 |------|-------------------|------------|-----------|
-| — | *(nenhuma entrada ainda)* | — | — |
+| 2026-03-23 | `NameError: uninitialized constant` em tests de tools | Rails autoload não resolve classes de arquivos com múltiplas classes (ex: `social_profile_tools.rb` contém 4 classes) | Adicionar `require_relative` explícito em cada arquivo de teste |
+| 2026-03-23 | Partial `discord_format.yml` não carregada pelo PromptLoader | PromptLoader espera prefixo `_` no nome do arquivo (`_discord_format.yml`) | Renomear arquivo para `_discord_format.yml` |
 
 <!-- Template para novas entradas:
 | YYYY-MM-DD | Descrição concisa do bug | O que causou | Como foi resolvido (`arquivo.rb`, classe, método) |
@@ -90,6 +102,7 @@ rg "<palavra-chave do problema>" docs/memory/
 
 | Data | Ação | Seção Afetada |
 |------|------|---------------|
+| 2026-03-23 | Fase 5 implementada: Discord Bot + 16 tools + digest jobs. Padrões ratificados: discordrb 3.7, requires explícitos em tests, partials com prefixo `_`. | Contexto Ativo, Padrões Ratificados |
 | 2026-03-22 | Criação inicial do MEMORY.md com padrões ratificados extraídos do AGENTS.md e docs/ | Todas |
 | 2026-03-22 | Adicionadas Definition of Done e Escalation Rules ao AGENTS.md | AGENTS.md |
 | 2026-03-22 | Criado Cold Tier protocol em MEMORY.md + estrutura `docs/memory/` | Cold Tier Protocol |

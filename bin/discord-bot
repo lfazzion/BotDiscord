@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+echo "[discord-bot] Verificando migrations pendentes..."
+PENDING=$(bundle exec rails db:migrate:status 2>/dev/null | grep -c "down" || true)
+
+if [ "$PENDING" -gt 0 ]; then
+  echo "[discord-bot] Encontradas $PENDING migrations pendentes. Rodando db:migrate..."
+  bundle exec rails db:migrate
+else
+  echo "[discord-bot] Todas as migrations aplicadas."
+fi
+
+echo "[discord-bot] Iniciando bot..."
+exec bundle exec rails runner "DiscordBotService.start"
