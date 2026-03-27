@@ -10,6 +10,16 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **[2026-03-26]** Fase 6 implementada: Lapidação e Operação Segura.
+  - Health check enriquecido (`/health`) com DB check
+  - Alertas automáticos de falha de scraping via Discord (`ScrapingFailureAlertJob`)
+  - Geração de imagens via Gemini Imagen 3 (`ImageGenerationService`, opt-in `ENABLE_IMAGE_GENERATION`)
+  - Backup automático do SQLite com proteção WAL (`SqliteBackupJob` + `bin/backup`)
+  - Throttle de alertas via Solid Cache (`AlertThrottler`, max 10/hora por tipo)
+  - `AdminAlertChannel` concern reutilizável (padrão `DigestChannel`)
+  - `sqlite3` CLI adicionado ao Dockerfile runtime stage
+  - `ruby_llm` atualizado para `~> 1.14` (suporte Imagen)
+  - 394 testes passando (0 failures, 0 errors)
 - **[2026-03-23]** Fase 5 implementada: UI Autônoma e Chatbot Tool Caller.
   - 16 tools em `app/tools/` (herdam de `RubyLLM::Tool` via `ToolBase`)
   - Discord Bot como serviço dedicado no compose (`discord-bot`)
@@ -29,6 +39,10 @@
 
 | Data | Padrão | Contexto |
 |------|--------|----------|
+| 2026-03-26 | ruby_llm ~> 1.14 (não 1.12) | Suporte a Imagen via `RubyLLM.paint` — API mudou em 1.14 |
+| 2026-03-26 | OpenStruct removido da stdlib em Ruby 4.0 | Usar classes plain ou Mocha mocks em testes em vez de `require 'ostruct'` |
+| 2026-03-26 | `$CHILD_STATUS&.exitstatus` com safe navigation | `$CHILD_STATUS` é nil quando `system` é stubbed em testes |
+| 2026-03-26 | Mock objects para `ActiveRecord::Base.connection` em integration tests | Stubs no connection object persistem entre tests devido ao connection pool |
 | 2026-03-23 | discordrb ~> 3.7 (3.7.2) — não existe ~> 3.8 | Versão mais recente compatível com Ruby 4.0 |
 | 2026-03-23 | Tools em arquivos únicos (múltiplas classes por arquivo) + requires explícitos em testes | Rails autoload não resolve classes de arquivos com nome diferente da classe |
 | 2026-03-23 | Partials de prompt devem ter prefixo `_` | PromptLoader procura `_nome.yml` em `partials/` |
@@ -51,6 +65,10 @@
 |------|-------------------|------------|-----------|
 | 2026-03-23 | `NameError: uninitialized constant` em tests de tools | Rails autoload não resolve classes de arquivos com múltiplas classes (ex: `social_profile_tools.rb` contém 4 classes) | Adicionar `require_relative` explícito em cada arquivo de teste |
 | 2026-03-23 | Partial `discord_format.yml` não carregada pelo PromptLoader | PromptLoader espera prefixo `_` no nome do arquivo (`_discord_format.yml`) | Renomear arquivo para `_discord_format.yml` |
+| 2026-03-26 | `OpenStruct` não disponível em Ruby 4.0 (`LoadError: cannot load such file -- ostruct`) | `ostruct` removido da default gems no Ruby 4.0 | Usar classes plain com `attr_reader` ou Mocha mocks em testes |
+| 2026-03-26 | `TimeWithZone#to_s(:db)` raises `ArgumentError: wrong number of arguments` em Ruby 4.0 | `to_s` não aceita argumentos de formato em Ruby 4.0 | Usar `strftime("%Y-%m-%d %H:%M:%S")` |
+| 2026-03-26 | Stubs Mocha em `ActiveRecord::Base.connection` vazam entre integration tests | Connection pool reutiliza o mesmo objeto connection entre tests | Usar mock objects (`mock('connection')`) em vez de stubs diretos + `Mocha::Mockery.instance.teardown` no teardown |
+| 2026-03-26 | `require_relative` errado em test de concern (`test/jobs/concerns/`) | Arquivo em subdiretório requer `../../../` em vez de `../../` para sair do concern | Verificar path relativo considerando profundidade do diretório |
 
 <!-- Template para novas entradas:
 | YYYY-MM-DD | Descrição concisa do bug | O que causou | Como foi resolvido (`arquivo.rb`, classe, método) |
@@ -102,6 +120,7 @@ rg "<palavra-chave do problema>" docs/memory/
 
 | Data | Ação | Seção Afetada |
 |------|------|---------------|
+| 2026-03-26 | Fase 6 implementada: health check, scraping alerts, image gen, SQLite backup. Padrões ratificados: ruby_llm 1.14, sem OpenStruct em Ruby 4.0, safe navigation para $CHILD_STATUS, mocks para DB em integration tests. Lições: to_s(:db) não funciona em Ruby 4.0, stubs Mocha vazam em connection pool. | Contexto Ativo, Padrões Ratificados, Lições Aprendidas |
 | 2026-03-23 | Fase 5 implementada: Discord Bot + 16 tools + digest jobs. Padrões ratificados: discordrb 3.7, requires explícitos em tests, partials com prefixo `_`. | Contexto Ativo, Padrões Ratificados |
 | 2026-03-22 | Criação inicial do MEMORY.md com padrões ratificados extraídos do AGENTS.md e docs/ | Todas |
 | 2026-03-22 | Adicionadas Definition of Done e Escalation Rules ao AGENTS.md | AGENTS.md |
