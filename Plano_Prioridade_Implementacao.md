@@ -122,130 +122,285 @@
    * Não permitir geração automática em massa sem budget limit ou flag explícita.
 
 
-## ✅ Fase 7: Validação de Produção e Hardening Operacional (Prioridade P2)
+## 🧱 Fase 7: Hardening Real de Produção e Sobrevivência Operacional (Prioridade P2)
+*Quando o sistema entra em uso contínuo, não basta funcionar; ele precisa falhar sem colapsar, se recuperar sem duplicar e sinalizar sem esconder a causa raiz.*
 
-1. **Testes de Restore do Backup (Não basta só copiar o SQLite):**
-   * Todo backup gerado precisa ter restore testado periodicamente em ambiente isolado.
-   * Validar se o banco restaurado sobe, se as migrations estão consistentes e se as tabelas críticas (`SocialProfile`, `SocialPost`, `ProfileSnapshot`) permanecem íntegras.
-   * Backup sem teste de restauração é apenas esperança operacional.
+1.  **Restore de Backup Validado de Verdade:**
+    *   Backup sem restore testado é placebo operacional. Toda rotina de cópia do SQLite/WAL precisa ter verificação periódica em ambiente isolado.
+    *   O restore deve provar três coisas: o banco sobe, as tabelas centrais (`SocialProfile`, `SocialPost`, `ProfileSnapshot`) permanecem consistentes e a aplicação consegue consultar e enfileirar jobs após recuperação.
+    *   Falhou restore? O alerta deve ser tratado como incidente crítico mesmo que o backup tenha “sido gerado”.
 
-2. **Validação de Idempotência Real dos Workers:**
-   * Revisar todos os jobs de coleta, snapshot e discovery para garantir que reprocessamento por retry, timeout ou duplicidade de schedule não gere registros duplicados, snapshots inválidos ou custos redundantes de LLM.
-   * Criar checklist técnico para confirmar:
-     * deduplicação por janela
-     * chaves de cache consistentes
-     * uso seguro de `.find_or_initialize_by`
-     * tolerância a corrida entre workers concorrentes
+2.  **Idempotência Blindada nos Workers Críticos:**
+    *   Revisar cada job de coleta, snapshot, classificação e discovery para garantir tolerância total a retry, duplicidade de agendamento e corrida entre workers.
+    *   Nenhum retry pode gerar:
+        * snapshots duplicados
+        * posts replicados
+        * chamadas LLM redundantes
+        * reclassificação inconsistente do mesmo alvo
+    *   Toda operação crítica deve nascer de chaves naturais rígidas + janela de deduplicação bem definida.
 
-3. **Dead Letter / Falha Terminal de Jobs:**
-   * Jobs que falharem repetidamente não devem desaparecer em silêncio.
-   * Criar fluxo de marcação de falha terminal com contexto mínimo:
-     * classe do job
-     * profile/post alvo
-     * plataforma
-     * motivo da falha
-     * timestamp
-   * Permitir reprocessamento manual posterior.
+3.  **Fila de Quarentena / Dead Letter Controlada:**
+    *   Jobs que excederem tentativas ou quebrarem por erro persistente não podem sumir em logs.
+    *   Criar fluxo de quarentena com payload mínimo auditável:
+        * classe do job
+        * plataforma/fonte
+        * identificador do profile/post
+        * etapa da falha
+        * motivo resumido
+        * timestamp
+    *   Isso precisa permitir replay manual posterior sem editar banco na mão.
 
-4. **Rate Limit Ledger por Fonte Externa:**
-   * Criar rastreio persistente dos bloqueios por provider/site/API.
-   * Registrar:
-     * quantidade de 403 / 429
-     * última ocorrência
-     * cooldown sugerido
-     * tipo de coletor afetado (RSS, HTTP, stealth, yt-dlp)
-   * Isso evita insistência cega em fontes degradadas e melhora a orquestração futura.
+4.  **Health Checks de Dependência, Não Só de Processo:**
+    *   O `/up` do Rails não basta como semáforo operacional. O sistema pode responder HTTP 200 e estar morto funcionalmente.
+    *   Validar separadamente:
+        * banco SQLite em WAL
+        * fila e workers ativos
+        * chrome/headless disponível
+        * acesso mínimo às integrações externas
+        * provider LLM acessível
+    *   Se qualquer dependência crítica estiver degradada, o health geral deve refletir isso.
 
-5. **Feature Flags para Coletores Sensíveis:**
-   * Todo coletor mais instável ou stealth deve poder ser desligado sem deploy.
-   * Flags por fonte, plataforma ou estratégia:
-     * `rss_enabled`
-     * `stealth_browser_enabled`
-     * `llm_discovery_enabled`
-     * `image_generation_enabled`
-   * Em incidente, o sistema degrada com controle em vez de cair inteiro.
+5.  **Feature Flags para Degradação Elegante:**
+    *   Todo coletor frágil, caro ou instável precisa ser desligável sem deploy.
+    *   Flags mínimas sugeridas:
+        * `rss_enabled`
+        * `stealth_enabled`
+        * `llm_discovery_enabled`
+        * `multimodal_enabled`
+        * `proactive_digest_enabled`
+    *   Em incidente, o sistema precisa perder capacidade parcial — nunca a plataforma inteira.
 
-6. **Health Checks por Dependência Crítica:**
-   * Não limitar observabilidade ao `/up`.
-   * Criar verificações separadas para:
-     * banco SQLite em modo WAL
-     * fila de jobs
-     * container headless/chrome
-     * conectividade externa mínima
-     * disponibilidade do provedor LLM
-   * O sistema pode estar “up” e ainda assim inutilizável.
+6.  **Ledger de Bloqueios e Rate Limits por Fonte:**
+    *   Não basta logar 403/429. É preciso memória operacional por provider.
+    *   Registrar por origem:
+        * número de falhas recentes
+        * última ocorrência
+        * cooldown sugerido
+        * tipo de coletor afetado
+        * status atual (`ok`, `cooldown`, `blocked`)
+    *   Isso impede insistência burra sobre fonte degradada e melhora decisões futuras do scheduler.
 
-7. **Runbooks de Incidente:**
-   * Documentar passo a passo para os incidentes mais prováveis:
-     * Chrome/headless indisponível
-     * bloqueio massivo por anti-bot
-     * falha no provider LLM
-     * crescimento anormal da fila
-     * banco SQLite bloqueado
-     * restore de emergência
-   * O objetivo é reduzir improviso em produção.
+7.  **Runbooks de Incidente e Recuperação Curta:**
+    *   Documentar o passo a passo mínimo para os cenários mais prováveis:
+        * chrome/headless indisponível
+        * proxy/residencial degradado
+        * provider LLM fora
+        * banco bloqueado
+        * crescimento anormal da fila
+        * restore emergencial
+    *   Produção madura não depende de memória pessoal do dev que escreveu tudo.
 
-## 🧪 Fase 8: Qualidade, Testes e Critérios de Confiabilidade (Prioridade P2)
+## 🧪 Fase 8: Qualidade Sistêmica, Testabilidade e Critérios de Confiança (Prioridade P2)
+*Sem provas de comportamento, o sistema parece inteligente até o primeiro desvio real de fonte, layout ou modelo externo.*
 
-1. **Suite de Testes para Fluxos Críticos:**
-   * Cobrir:
-     * coleta e parsing
-     * deduplicação
-     * snapshots
-     * classificação LLM
-     * fallback degradado
-     * tool calling
-   * Priorizar testes de comportamento, não só unitários isolados.
+1.  **Testes de Fluxos Críticos ponta a ponta:**
+    *   Priorizar testes de comportamento real sobre unit tests decorativos.
+    *   Cobrir no mínimo:
+        * ingestão/coleta
+        * deduplicação
+        * snapshots
+        * classificação LLM
+        * fallback sem browser
+        * fallback sem LLM
+        * resposta do tool calling
+    *   O objetivo é provar que o encadeamento inteiro não quebra quando uma parte degrada.
 
-2. **Testes de Contrato para Integrações Externas:**
-   * Toda integração com LLM, RSS, GraphQL, yt-dlp ou navegador stealth precisa ter contrato mínimo esperado.
-   * Mudou formato de retorno? O teste acusa antes da produção quebrar silenciosamente.
+2.  **Fixtures Reais de HTML, JSON e RSS:**
+    *   Salvar exemplos reais das fontes externas para testar parse local sem depender do site online.
+    *   Isso protege contra regressões silenciosas quando o scraper muda ou quando o layout externo é alterado.
+    *   Fixtures devem cobrir:
+        * resposta limpa
+        * resposta parcial
+        * resposta quebrada
+        * campos faltando
+        * rate-limit/ban page quando aplicável
 
-3. **Fixtures Reais de HTML/JSON para Scrapers:**
-   * Salvar exemplos reais de páginas e respostas para testar parser sem depender do site estar online.
-   * Isso acelera debug e protege contra regressões.
+3.  **Testes de Contrato para Integrações Externas:**
+    *   Qualquer provider externo que entregue estrutura esperada precisa ter contrato mínimo verificado.
+    *   Inclui:
+        * LLM structured outputs
+        * TMDB / IGDB / Anilist
+        * RSS parsers
+        * yt-dlp outputs
+        * módulos stealth
+    *   Mudou shape de retorno? O sistema precisa acusar antes da produção ficar semanticamente errada.
 
-4. **Smoke Tests de Produção Pós-Deploy:**
-   * Após deploy, executar checks mínimos automatizados:
-     * enqueue de job
-     * leitura do banco
-     * conexão com headless
-     * execução de um coletor simples
-     * resposta básica do bot/chat
-   * Deploy bem-sucedido não significa sistema funcional.
+4.  **Validação de Modo Degradado:**
+    *   O sistema precisa ter testes específicos provando que continua útil sem partes não essenciais.
+    *   Exemplos:
+        * sem LLM → coleta e persistência continuam
+        * sem browser stealth → RSS/coletores simples continuam
+        * sem multimodal → chatbot e análises textuais continuam
+    *   Falhar bonito é uma feature de arquitetura, não um acidente.
 
-5. **Teste de Carga Leve em Concorrência:**
-   * Validar comportamento com múltiplos jobs simultâneos usando SQLite WAL.
-   * Medir:
-     * lock contention
-     * tempo médio de job
-     * saturação do worker
-     * crescimento de fila
+5.  **Smoke Tests Pós-Deploy:**
+    *   Todo deploy deve ser seguido por validações automáticas mínimas:
+        * leitura do banco
+        * enqueue e execução de job simples
+        * acesso ao serviço headless
+        * consulta básica do bot/chat
+        * leitura de uma configuração/feature flag
+    *   Deploy “verde” não significa sistema operacionalmente pronto.
 
-## 🔐 Fase 9: Segurança Operacional e Governança (Prioridade P2)
+6.  **Teste de Concorrência Leve com SQLite WAL:**
+    *   O uso real vai concentrar IO, snapshots, jobs e classificações em paralelo.
+    *   Validar lock contention, tempo médio de job, throughput mínimo e comportamento sob fila crescente.
+    *   Se WAL começar a estrangular em cenário plausível, isso precisa aparecer antes do uso real.
 
-1. **Segredos e Rotação Segura:**
-   * Garantir que tokens de APIs, chaves LLM e credenciais externas estejam fora do código e com política clara de rotação.
+7.  **Critérios de Aceite por Fase Operacional:**
+    *   Formalizar um checklist objetivo para considerar a plataforma confiável:
+        * coleta persiste sem duplicar
+        * snapshots respeitam janela de dedup
+        * tool calling não explode query
+        * fallback degradado funciona
+        * backups restauram
+        * alertas são acionáveis
+    *   Sem isso, “implementado” vira apenas percepção subjetiva.
 
-2. **Sanitização de Logs:**
-   * Nunca registrar:
-     * tokens
-     * cookies
-     * prompts completos com dados sensíveis
-     * payloads integrais de autenticação
-   * Logs devem ser úteis sem vazar material crítico.
+## 🔐 Fase 9: Segurança Operacional, Governança e Controle de Superfície (Prioridade P2)
+*Quanto mais autonomia o sistema ganha, maior o risco de custo explosivo, vazamento de contexto e ações além do permitido.*
 
-3. **Rate Limits Internos por Usuário/Canal/Ferramenta:**
-   * O bot e o módulo de tools precisam limitar abuso operacional e chamadas excessivas que explodam custo de banco ou LLM.
+1.  **Gestão Rígida de Segredos e Credenciais:**
+    *   Tokens de providers, chaves LLM, cookies de sessão e credenciais de proxies nunca devem residir em código, fixtures ou logs.
+    *   Centralizar leitura via environment/config segura com política explícita de rotação.
+    *   Toda credencial crítica precisa ter dono, origem e estratégia de troca documentados.
 
-4. **Permissões por Ferramenta no Tool Calling:**
-   * Nem todo comando deve ficar exposto em qualquer contexto.
-   * Separar tools:
-     * leitura
-     * análise
-     * ação administrativa
-     * rotinas caras
+2.  **Sanitização Obrigatória de Logs:**
+    *   Log útil não pode virar vazamento.
+    *   É proibido expor:
+        * tokens
+        * cookies
+        * headers sensíveis
+        * prompt completo com dados privados
+        * payload integral de autenticação
+    *   Os logs devem mostrar contexto suficiente para debug sem expor material reaproveitável.
 
-5. **Versionamento de Prompts e Ferramentas:**
-   * Sempre que alterar prompt estrutural, schema de tool ou regras do roteador LLM, registrar versão.
-   * Facilita rollback sem adivinhação.
+3.  **Controle de Acesso por Tool e Classe de Ação:**
+    *   Nem toda ferramenta do chatbot deve ficar disponível em qualquer contexto.
+    *   Separar permissões por categoria:
+        * leitura
+        * análise
+        * descoberta automatizada
+        * ações administrativas
+        * rotinas caras/multimodais
+    *   Quanto mais poderosa a tool, maior o gate de execução.
+
+4.  **Rate Limits Internos e Controle de Custo:**
+    *   O risco não é só bloqueio externo; é custo interno explodindo por tool calling descontrolado ou loops de automação.
+    *   Limitar por:
+        * usuário/canal
+        * job recorrente
+        * número de chamadas LLM
+        * volume de outputs multimodais
+    *   Toda rotina cara precisa de clamp e budget operacional.
+
+5.  **Versionamento de Prompts, Schemas e Ferramentas:**
+    *   Prompt sistêmico, contrato de tool e output estruturado não podem mudar “soltos”.
+    *   Versionar:
+        * prompts base
+        * schemas de retorno
+        * regras do roteador LLM
+        * classificadores de discovery
+    *   Isso permite rollback sem adivinhação quando um ajuste piora a qualidade.
+
+6.  **Auditoria de Ações Automatizadas Sensíveis:**
+    *   Toda ação importante disparada por automação ou LLM deve deixar trilha:
+        * qual rotina executou
+        * qual entrada motivou
+        * qual ferramenta foi chamada
+        * qual resultado saiu
+        * qual versão de prompt/modelo estava ativa
+    *   Sem trilha, não existe governança real de autonomia.
+
+7.  **Escopo Seguro de Execução do Chatbot:**
+    *   O bot precisa ser desenhado para consultar e sugerir com liberdade, mas agir com restrição.
+    *   Operações destrutivas, caras ou com efeito sistêmico devem exigir:
+        * confirmação explícita
+        * role/contexto apropriado
+        * ou bloqueio total fora de ambiente administrativo
+    *   Chatbot útil não pode virar operador irrestrito por acidente.
+
+## 📊 Fase 10: Qualidade de Dados, Auditoria Semântica e Reprocessamento Inteligente (Prioridade P3)
+*Não basta coletar muito. O valor real do sistema nasce quando o dado continua confiável, explicável e reaproveitável mesmo após falhas, mudanças externas e classificações imperfeitas do LLM.*
+
+1.  **Data Quality Checks Automáticos:**
+    *   Criar rotinas periódicas para varrer inconsistências silenciosas no banco, antes que elas contaminem o chatbot, os digests e as decisões da Influencer.
+    *   Detectar automaticamente:
+        * picos absurdos ou quedas improváveis em likes/views
+        * snapshots fora de ordem temporal
+        * posts duplicados por falha de scraper ou retry
+        * campos críticos ausentes em excesso
+        * perfis “ativos” sem coleta recente
+    *   O objetivo é tratar dado estranho como sinal operacional — não como verdade absoluta.
+
+2.  **Flags de Confiabilidade por Registro:**
+    *   Nem toda linha persistida deve carregar o mesmo peso interpretativo para o sistema.
+    *   Adicionar sinalização objetiva por registro/snapshot/post, com estados como:
+        * `trusted`
+        * `partial`
+        * `source_degraded`
+        * `llm_inferred`
+        * `needs_review`
+    *   Isso permite que o bot, os classificadores e os relatórios saibam quando um dado é sólido, quando é aproximado e quando deve ser tratado com cautela.
+
+3.  **Auditoria das Classificações e Inferências de LLM:**
+    *   Toda classificação relevante feita por modelo precisa deixar trilha suficiente para inspeção posterior.
+    *   Persistir pelo menos:
+        * entrada resumida enviada ao modelo
+        * saída estruturada recebida
+        * versão do prompt
+        * modelo utilizado
+        * timestamp da inferência
+    *   Sem isso, o sistema perde a capacidade de explicar por que um profile virou `CONCORRENTE`, `PATROCINADOR_PROSPECTO` ou `IGNORAR`.
+
+4.  **Reprocessamento Seletivo e Cirúrgico:**
+    *   Falhas ou melhorias futuras não devem obrigar rerun global do pipeline inteiro.
+    *   Permitir reprocessar isoladamente:
+        * um profile específico
+        * um post específico
+        * uma fonte/plataforma
+        * uma janela temporal
+        * uma etapa semântica (ex: somente classificação LLM)
+    *   Isso reduz custo, evita duplicidade e acelera correção de incidentes localizados.
+
+5.  **Reconciliação entre Fontes e Verdade Provável:**
+    *   Quando múltiplas rotas de coleta produzirem dados diferentes para o mesmo alvo, o sistema não pode simplesmente sobrescrever silenciosamente.
+    *   Criar lógica de reconciliação leve baseada em:
+        * precedência de fonte
+        * recência do snapshot
+        * consistência histórica do perfil/post
+        * presença de degradação conhecida na origem
+    *   Divergência precisa virar decisão explícita, não ruído escondido.
+
+6.  **Janela de Validade Semântica dos Dados:**
+    *   Nem todo dado continua útil pelo mesmo tempo.
+    *   Definir TTL lógico por classe de informação:
+        * métricas de post → alta volatilidade
+        * bios e links → média volatilidade
+        * classificação de perfil → requer reavaliação periódica
+        * eventos externos/agendas → expiração por data
+    *   O chatbot precisa preferir dado recente quando a natureza do campo exigir isso.
+
+7.  **Camada de Revisão para Casos Ambíguos:**
+    *   Algumas saídas não devem entrar como verdade automática.
+    *   Sempre que houver baixa confiança, conflito entre fontes ou structured output incompleto, marcar o item para revisão posterior em vez de consolidar como sinal definitivo.
+    *   Melhor um registro pendente do que uma certeza falsa alimentando análise futura.
+
+8.  **Métricas de Qualidade do Próprio Sistema:**
+    *   Além de monitorar infra, medir a qualidade da inteligência produzida.
+    *   Acompanhar indicadores como:
+        * taxa de registros degradados
+        * volume de inferências LLM contraditórias
+        * percentual de posts/perfis reprocessados
+        * quantidade de gaps por fonte
+        * taxa de confiança por classificador
+    *   Isso transforma qualidade de dados em superfície visível de operação, e não em problema descoberto tarde demais.
+
+9.  **Preparação para Evolução de Schema Sem Perda Semântica:**
+    *   O modelo do domínio vai evoluir. Quando novos campos, flags ou tipos surgirem, o banco e os pipelines não podem apagar nuance histórica.
+    *   Toda mudança futura em schema deve preservar:
+        * distinção entre `nil` e zero
+        * origem do dado
+        * qualidade/confiabilidade associada
+        * compatibilidade com snapshots antigos
+    *   Evoluir schema sem destruir semântica é parte central da longevidade do sistema.
