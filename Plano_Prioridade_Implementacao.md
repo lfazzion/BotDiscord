@@ -404,3 +404,98 @@
         * qualidade/confiabilidade associada
         * compatibilidade com snapshots antigos
     *   Evoluir schema sem destruir semântica é parte central da longevidade do sistema.
+
+## 🚀 Fase 11: Deploy, Publicação e Ambiente Real de Execução (Prioridade P2)
+*Um sistema não está realmente pronto quando apenas roda localmente; ele precisa subir com previsibilidade, degradar com segurança, reiniciar sem perder contexto e caber numa estratégia de custo viável.*
+
+1.  **Definir Topologia de Deploy Real:**
+    *   Formalizar como os componentes serão publicados fora do ambiente local.
+    *   Separar claramente:
+        * aplicação Rails principal
+        * workers/jobs assíncronos
+        * browser/headless quando necessário
+        * banco/persistência
+        * redis/fila, se aplicável
+    *   O deploy precisa refletir a arquitetura de verdade, não apenas “um container que sobe tudo”.
+
+2.  **Escolher Estratégia de Hospedagem por Perfil de Carga:**
+    *   Antes de publicar, classificar o sistema em termos de execução real:
+        * bot HTTP sob demanda
+        * worker contínuo
+        * scheduler/cron recorrente
+        * tarefas pesadas com browser
+        * rotinas LLM com custo variável
+    *   Isso evita escolher plataforma “free” que parece suficiente, mas quebra no primeiro uso contínuo.
+
+3.  **Pesquisar e Validar Opções de Deploy Free para Hospedar o Bot:**
+    *   Incluir uma investigação prática comparando provedores gratuitos ou com camada gratuita viável para hobby/MVP.
+    *   Avaliar pelo menos:
+        * suporte a processo contínuo
+        * suporte a web service + worker
+        * possibilidade de cron/scheduler
+        * persistência/local disk
+        * cold start / scale-to-zero
+        * limites de RAM/CPU
+        * necessidade de cartão/crédito
+    *   A decisão não deve ser baseada só em “tem free tier”, mas em compatibilidade com o comportamento real do bot.
+
+4.  **Documentar Provedores Candidatos e Restrições Reais:**
+    *   Registrar prós, contras e bloqueios de cada opção analisada.
+    *   Observações iniciais importantes:
+        * **Render**: possui free para web services, mas não é solução ideal quando você depende de cron pago ou workers contínuos fora da camada free. :contentReference[oaicite:1]{index=1}
+        * **Railway**: é prática para deploy rápido, mas hoje não é um “free tier permanente” simples; começa com trial/créditos e depois entra em custo. :contentReference[oaicite:2]{index=2}
+        * **Koyeb**: hoje oferece uma Free Instance com 512MB RAM, 0.1 vCPU e 2GB SSD; pode servir para MVP, mas o scale-to-zero após 1 hora sem tráfego precisa ser considerado se o bot exigir processo sempre ativo. :contentReference[oaicite:3]{index=3}
+    *   O plano deve deixar claro qual opção é “boa para MVP/teste” e qual é “boa para operação contínua”.
+
+5.  **Empacotamento Reprodutível com Docker:**
+    *   Garantir que a aplicação possa ser subida de forma consistente fora do dev machine.
+    *   Criar imagem reprodutível com:
+        * dependencies explícitas
+        * variáveis de ambiente bem definidas
+        * entrypoints separados por papel (`web`, `worker`, `scheduler`)
+    *   Deploy confiável começa por build confiável.
+
+6.  **Configuração Segura de Ambientes:**
+    *   Separar claramente dev / staging / production.
+    *   Toda variável crítica deve ser configurável sem alteração de código:
+        * segredos
+        * endpoints externos
+        * flags operacionais
+        * limites de custo
+        * chaves de providers
+    *   O ambiente publicado não pode depender de defaults implícitos do desenvolvimento local.
+
+7.  **Estratégia de Persistência e Volumes:**
+    *   Se houver uso de SQLite, arquivos, cache local ou artefatos temporários, isso precisa ser compatível com o host escolhido.
+    *   Validar:
+        * disco efêmero vs persistente
+        * comportamento após restart/redeploy
+        * backup compatível com o ambiente
+        * impacto de múltiplas instâncias sobre arquivos locais
+    *   Nem todo host free é amigável a persistência local.
+
+8.  **Deploy Inicial com Smoke Test de Publicação:**
+    *   Após o primeiro deploy, executar checklist mínimo:
+        * aplicação sobe
+        * worker executa
+        * fila/processamento funciona
+        * healthcheck responde
+        * bot consegue responder ao fluxo mais básico
+        * logs aparecem no ambiente remoto
+    *   “Deploy concluído” não significa “sistema utilizável”.
+
+9.  **Estratégia de Rollback e Rebuild Rápido:**
+    *   Toda publicação precisa ter caminho simples de reversão.
+    *   Documentar:
+        * como voltar para versão anterior
+        * como redeployar build limpo
+        * como validar se o problema está no código ou no ambiente
+    *   Operação madura inclui recuperação rápida, não só entrega.
+
+10. **Critério de Saída da Fase 11:**
+    *   A fase só deve ser considerada concluída quando existir:
+        * pelo menos um ambiente remoto funcional
+        * documentação da escolha de hosting
+        * entendimento explícito dos limites do plano free escolhido
+        * checklist de deploy e rollback
+        * prova de que o bot sobe e executa o fluxo principal fora do ambiente local
