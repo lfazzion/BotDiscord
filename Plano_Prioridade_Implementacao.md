@@ -87,3 +87,165 @@
     *   Se o scraper falhou (bloqueio, timeout, DOM quebrado), caia em cascata: (1) tentar `og:description` / OpenGraph metadata via HTTP simples; (2) extrair título da URL; (3) registrar como gap no banco com flag `source_degraded: true` para o LLM saber que aquele dado tem qualidade reduzida.
 3.  **Stealth Patches no Ferrum (Anti-Bot Detection):**
     *   Injetar JS anti-detecção via CDP `Page.addScriptToEvaluateOnNewDocument` ANTES de qualquer script da página: falsificar `navigator.webdriver = false`, patchar `navigator.plugins`, spoofar WebGL renderer ("NVIDIA GeForce GTX 1080"), e ativar flag `--disable-blink-features=AutomationControlled`.
+
+## 🔍 Observações Pós-Implementação — Fase 6 (Verificações Obrigatórias)
+
+1. **Verificar se os alertas geram ruído excessivo:**
+   * Ajustar limiares para evitar flood no Discord admin.
+   * Alertas devem sinalizar problema real, não spam operacional.
+
+2. **Confirmar que o Auto-Healing não mascara falhas persistentes:**
+   * Se o sistema só alerta e reexecuta, mas nunca marca incidente recorrente, a falha vira dívida invisível.
+   * Necessário escalonamento após N ocorrências semelhantes.
+
+3. **Validar integridade do fluxo de backup em banco vivo:**
+   * Confirmar que a cópia em ambiente com WAL não gera arquivo inconsistente.
+   * Verificar retenção, naming e limpeza de backups antigos.
+
+4. **Testar falha simulada dos containers de coleta:**
+   * Derrubar manualmente o container `chrome` / scraper e validar:
+     * se o sistema detecta
+     * se alerta corretamente
+     * se os jobs pendentes não corrompem estado
+     * se a retomada ocorre sem duplicidade
+
+5. **Revisar logs da Fase 6 para contexto mínimo útil:**
+   * Todo erro operacional precisa indicar pelo menos:
+     * job/classe
+     * plataforma/fonte
+     * profile/post/evento afetado
+     * tipo de falha
+   * Sem isso, o alerta existe mas a investigação continua cega.
+
+6. **Testar custos indiretos de rotinas opcionais:**
+   * A cadeia multimídia opcional precisa ter guarda de custo e execução controlada.
+   * Não permitir geração automática em massa sem budget limit ou flag explícita.
+
+
+## ✅ Fase 7: Validação de Produção e Hardening Operacional (Prioridade P2)
+
+1. **Testes de Restore do Backup (Não basta só copiar o SQLite):**
+   * Todo backup gerado precisa ter restore testado periodicamente em ambiente isolado.
+   * Validar se o banco restaurado sobe, se as migrations estão consistentes e se as tabelas críticas (`SocialProfile`, `SocialPost`, `ProfileSnapshot`) permanecem íntegras.
+   * Backup sem teste de restauração é apenas esperança operacional.
+
+2. **Validação de Idempotência Real dos Workers:**
+   * Revisar todos os jobs de coleta, snapshot e discovery para garantir que reprocessamento por retry, timeout ou duplicidade de schedule não gere registros duplicados, snapshots inválidos ou custos redundantes de LLM.
+   * Criar checklist técnico para confirmar:
+     * deduplicação por janela
+     * chaves de cache consistentes
+     * uso seguro de `.find_or_initialize_by`
+     * tolerância a corrida entre workers concorrentes
+
+3. **Dead Letter / Falha Terminal de Jobs:**
+   * Jobs que falharem repetidamente não devem desaparecer em silêncio.
+   * Criar fluxo de marcação de falha terminal com contexto mínimo:
+     * classe do job
+     * profile/post alvo
+     * plataforma
+     * motivo da falha
+     * timestamp
+   * Permitir reprocessamento manual posterior.
+
+4. **Rate Limit Ledger por Fonte Externa:**
+   * Criar rastreio persistente dos bloqueios por provider/site/API.
+   * Registrar:
+     * quantidade de 403 / 429
+     * última ocorrência
+     * cooldown sugerido
+     * tipo de coletor afetado (RSS, HTTP, stealth, yt-dlp)
+   * Isso evita insistência cega em fontes degradadas e melhora a orquestração futura.
+
+5. **Feature Flags para Coletores Sensíveis:**
+   * Todo coletor mais instável ou stealth deve poder ser desligado sem deploy.
+   * Flags por fonte, plataforma ou estratégia:
+     * `rss_enabled`
+     * `stealth_browser_enabled`
+     * `llm_discovery_enabled`
+     * `image_generation_enabled`
+   * Em incidente, o sistema degrada com controle em vez de cair inteiro.
+
+6. **Health Checks por Dependência Crítica:**
+   * Não limitar observabilidade ao `/up`.
+   * Criar verificações separadas para:
+     * banco SQLite em modo WAL
+     * fila de jobs
+     * container headless/chrome
+     * conectividade externa mínima
+     * disponibilidade do provedor LLM
+   * O sistema pode estar “up” e ainda assim inutilizável.
+
+7. **Runbooks de Incidente:**
+   * Documentar passo a passo para os incidentes mais prováveis:
+     * Chrome/headless indisponível
+     * bloqueio massivo por anti-bot
+     * falha no provider LLM
+     * crescimento anormal da fila
+     * banco SQLite bloqueado
+     * restore de emergência
+   * O objetivo é reduzir improviso em produção.
+
+## 🧪 Fase 8: Qualidade, Testes e Critérios de Confiabilidade (Prioridade P2)
+
+1. **Suite de Testes para Fluxos Críticos:**
+   * Cobrir:
+     * coleta e parsing
+     * deduplicação
+     * snapshots
+     * classificação LLM
+     * fallback degradado
+     * tool calling
+   * Priorizar testes de comportamento, não só unitários isolados.
+
+2. **Testes de Contrato para Integrações Externas:**
+   * Toda integração com LLM, RSS, GraphQL, yt-dlp ou navegador stealth precisa ter contrato mínimo esperado.
+   * Mudou formato de retorno? O teste acusa antes da produção quebrar silenciosamente.
+
+3. **Fixtures Reais de HTML/JSON para Scrapers:**
+   * Salvar exemplos reais de páginas e respostas para testar parser sem depender do site estar online.
+   * Isso acelera debug e protege contra regressões.
+
+4. **Smoke Tests de Produção Pós-Deploy:**
+   * Após deploy, executar checks mínimos automatizados:
+     * enqueue de job
+     * leitura do banco
+     * conexão com headless
+     * execução de um coletor simples
+     * resposta básica do bot/chat
+   * Deploy bem-sucedido não significa sistema funcional.
+
+5. **Teste de Carga Leve em Concorrência:**
+   * Validar comportamento com múltiplos jobs simultâneos usando SQLite WAL.
+   * Medir:
+     * lock contention
+     * tempo médio de job
+     * saturação do worker
+     * crescimento de fila
+
+## 🔐 Fase 9: Segurança Operacional e Governança (Prioridade P2)
+
+1. **Segredos e Rotação Segura:**
+   * Garantir que tokens de APIs, chaves LLM e credenciais externas estejam fora do código e com política clara de rotação.
+
+2. **Sanitização de Logs:**
+   * Nunca registrar:
+     * tokens
+     * cookies
+     * prompts completos com dados sensíveis
+     * payloads integrais de autenticação
+   * Logs devem ser úteis sem vazar material crítico.
+
+3. **Rate Limits Internos por Usuário/Canal/Ferramenta:**
+   * O bot e o módulo de tools precisam limitar abuso operacional e chamadas excessivas que explodam custo de banco ou LLM.
+
+4. **Permissões por Ferramenta no Tool Calling:**
+   * Nem todo comando deve ficar exposto em qualquer contexto.
+   * Separar tools:
+     * leitura
+     * análise
+     * ação administrativa
+     * rotinas caras
+
+5. **Versionamento de Prompts e Ferramentas:**
+   * Sempre que alterar prompt estrutural, schema de tool ou regras do roteador LLM, registrar versão.
+   * Facilita rollback sem adivinhação.
