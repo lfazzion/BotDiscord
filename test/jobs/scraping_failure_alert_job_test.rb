@@ -20,6 +20,7 @@ class ScrapingFailureAlertJobTest < ActiveSupport::TestCase
 
   test 'perform loga warning quando canal admin não configurado' do
     ENV.delete('DISCORD_ADMIN_CHANNEL_ID')
+    Rails.cache.delete('discord:admin_channel_id')
 
     DiscordApiClient.stubs(:get_bot_guilds).returns([])
 

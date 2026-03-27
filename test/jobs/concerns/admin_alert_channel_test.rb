@@ -50,6 +50,7 @@ class AdminAlertChannelTest < ActiveSupport::TestCase
 
   test 'ensure_admin_channel retorna nil quando sem guilds' do
     ENV.delete('DISCORD_ADMIN_CHANNEL_ID')
+    Rails.cache.delete('discord:admin_channel_id')
 
     DiscordApiClient.stubs(:get_bot_guilds).returns([])
 
