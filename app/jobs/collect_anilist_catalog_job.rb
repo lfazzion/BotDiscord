@@ -49,29 +49,29 @@ class CollectAnilistCatalogJob < ApplicationJob
     score = item["averageScore"]
     pop = item["popularity"]
 
-      anilist_status = item["status"]&.downcase
-      mapped_status = case anilist_status
-                      when "not_yet_released" then "upcoming"
-                      when "finished" then "released"
-                      when "releasing" then "releasing"
-                      when "cancelled" then "cancelled"
-                      else "released"
-                      end
+    anilist_status = item["status"]&.downcase
+    mapped_status = case anilist_status
+                    when "not_yet_released" then "upcoming"
+                    when "finished" then "released"
+                    when "releasing" then "releasing"
+                    when "cancelled" then "cancelled"
+                    else "released"
+                    end
 
-      catalog.assign_attributes(
-        title: item.dig("title", "english") || item.dig("title", "romaji"),
-        media_type: "anime",
-        description: item["description"]&.gsub(/<[^>]+>/, "")&.strip,
-        release_date: release_date,
-        popularity: pop,
-        vote_average: score ? (score.to_f / 10.0) : nil,
-        vote_count: pop,
-        poster_url: item.dig("coverImage", "large"),
-        genres: item["genres"]&.join(","),
-        status: mapped_status,
-        original_language: "ja",
-        metadata: item.except("title", "description", "startDate", "averageScore", "popularity", "coverImage", "genres")
-      )
+    catalog.assign_attributes(
+      title: item.dig("title", "english") || item.dig("title", "romaji"),
+      media_type: "anime",
+      description: item["description"]&.gsub(/<[^>]+>/, "")&.strip,
+      release_date: release_date,
+      popularity: pop,
+      vote_average: score ? (score.to_f / 10.0) : nil,
+      vote_count: pop,
+      poster_url: item.dig("coverImage", "large"),
+      genres: item["genres"]&.join(","),
+      status: mapped_status,
+      original_language: "ja",
+      metadata: item.except("title", "description", "startDate", "averageScore", "popularity", "coverImage", "genres")
+    )
 
     catalog.save! if catalog.changed?
   end

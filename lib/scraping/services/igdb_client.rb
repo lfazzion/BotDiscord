@@ -12,6 +12,7 @@ module ScrapingServices
     class << self
       def reset_access_token
         @access_token = nil
+        @token_expires_at = nil
       end
 
       def fetch_popular_games(limit: 50)
@@ -38,7 +39,14 @@ module ScrapingServices
       private
 
       def access_token
-        @access_token ||= begin
+        if @access_token && @token_expires_at && @token_expires_at > Time.current
+          return @access_token
+        end
+
+        @access_token = nil
+        @token_expires_at = nil
+
+        begin
           uri = URI(TOKEN_URL)
           http = Net::HTTP.new(uri.host, uri.port)
           http.use_ssl = true
@@ -54,7 +62,10 @@ module ScrapingServices
 
           if response.is_a?(Net::HTTPSuccess)
             data = JSON.parse(response.body)
-            data['access_token']
+            @access_token = data['access_token']
+            expires_in = data['expires_in'].to_i
+            @token_expires_at = expires_in > 0 ? Time.current + expires_in.seconds : nil
+            @access_token
           else
             Rails.logger.error "[IgdbClient] Falha ao gerar token: HTTP #{response.code}"
             nil

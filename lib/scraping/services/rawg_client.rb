@@ -16,7 +16,7 @@ module ScrapingServices
       end
 
       def fetch_popular_games(limit: 20)
-        get("/games", ordering: "-added", page_size: limit, dates: "2025-01-01,#{Date.current}")
+        get("/games", ordering: "-added", page_size: limit, dates: "#{1.year.ago.to_date},#{Date.current}")
       end
 
       private

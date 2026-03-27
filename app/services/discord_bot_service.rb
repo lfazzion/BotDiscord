@@ -10,7 +10,7 @@ class DiscordBotService
 
       bot = Discordrb::Bot.new(
         token: ENV['DISCORD_BOT_TOKEN'],
-        intents: %i[servers server_messages direct_messages]
+        intents: %i[servers server_messages direct_messages message_content]
       )
 
       bot.message(content: /./) do |event|
