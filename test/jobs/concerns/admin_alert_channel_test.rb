@@ -26,6 +26,7 @@ class AdminAlertChannelTest < ActiveSupport::TestCase
 
   test 'ensure_admin_channel cria canal quando ENV não configurado' do
     ENV.delete('DISCORD_ADMIN_CHANNEL_ID')
+    Rails.cache.delete('discord:admin_channel_id')
 
     DiscordApiClient.stubs(:get_bot_guilds).returns([{ 'id' => 'guild789' }])
     DiscordApiClient.stubs(:create_text_channel).returns({ 'id' => 'channel456' })
@@ -34,6 +35,17 @@ class AdminAlertChannelTest < ActiveSupport::TestCase
     channel_id = job.send(:ensure_admin_channel)
 
     assert_equal 'channel456', channel_id
+  end
+
+  test 'ensure_admin_channel usa cache quando disponível' do
+    ENV.delete('DISCORD_ADMIN_CHANNEL_ID')
+    Rails.cache.write('discord:admin_channel_id', 'cached_channel_789', expires_in: 30.days)
+
+    job = DummyJob.new
+    channel_id = job.send(:ensure_admin_channel)
+
+    assert_equal 'cached_channel_789', channel_id
+    Rails.cache.delete('discord:admin_channel_id')
   end
 
   test 'ensure_admin_channel retorna nil quando sem guilds' do
