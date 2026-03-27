@@ -1,18 +1,24 @@
 # frozen_string_literal: true
 
 class UpcomingCatalogTool < ToolBase
-  description 'Lista itens de catálogo com lançamentos futuros'
+  description 'Lista itens de catálogo com lançamentos futuros. Para jogos, usar source="rawg" para resultados mais relevantes.'
 
-  param :source, type: :string, desc: 'Fonte (tmdb/igdb/anilist)', required: false
+  param :source, type: :string, desc: 'Fonte: tmdb, igdb, anilist, rawg. Para jogos usar rawg.', required: false
   param :media_type, type: :string, desc: 'Tipo de mídia (movie/tv/game/anime)', required: false
   param :limit, type: :integer, desc: 'Número máximo de resultados (padrão 10)', required: false
 
   def run(source: nil, media_type: nil, limit: 10)
     limit = clamp(limit, 1, 50)
     items = ExternalCatalog.upcoming
+
+    # Priorizar RAWG para jogos quando nenhuma fonte é especificada
+    if source.blank? && media_type == "game"
+      source = "rawg"
+    end
+
     items = items.by_source(source) if source.present?
     items = items.by_media_type(media_type) if media_type.present?
-    items = items.limit(limit)
+    items = items.order(popularity: :desc).limit(limit)
 
     success(items.map { |i| format_catalog(i) })
   end

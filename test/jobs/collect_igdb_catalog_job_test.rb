@@ -21,6 +21,7 @@ class CollectIgdbCatalogJobTest < ActiveJob::TestCase
         "status" => 0
       }
     ])
+    ScrapingServices::IgdbClient.stubs(:fetch_upcoming_games).returns([])
 
     assert_difference 'ExternalCatalog.count', 1 do
       CollectIgdbCatalogJob.perform_now
@@ -40,6 +41,7 @@ class CollectIgdbCatalogJobTest < ActiveJob::TestCase
     ScrapingServices::IgdbClient.stubs(:fetch_popular_games).returns([
       { "id" => 3001, "name" => "Updated Game", "first_release_date" => 1700000000, "rating" => 95.0, "rating_count" => 2000, "status" => 0 }
     ])
+    ScrapingServices::IgdbClient.stubs(:fetch_upcoming_games).returns([])
 
     assert_no_difference 'ExternalCatalog.count' do
       CollectIgdbCatalogJob.perform_now
@@ -55,6 +57,7 @@ class CollectIgdbCatalogJobTest < ActiveJob::TestCase
     ScrapingServices::IgdbClient.stubs(:fetch_popular_games).returns([
       { "id" => 3001, "name" => "New Game", "first_release_date" => 1700000000, "status" => 0 }
     ])
+    ScrapingServices::IgdbClient.stubs(:fetch_upcoming_games).returns([])
 
     CollectIgdbCatalogJob.perform_now
 
@@ -64,6 +67,7 @@ class CollectIgdbCatalogJobTest < ActiveJob::TestCase
 
   test "should not crash when client returns nil" do
     ScrapingServices::IgdbClient.stubs(:fetch_popular_games).returns(nil)
+    ScrapingServices::IgdbClient.stubs(:fetch_upcoming_games).returns(nil)
 
     assert_no_difference 'ExternalCatalog.count' do
       CollectIgdbCatalogJob.perform_now

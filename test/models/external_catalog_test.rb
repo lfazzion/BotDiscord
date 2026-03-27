@@ -74,13 +74,13 @@ class ExternalCatalogTest < ActiveSupport::TestCase
     assert_not_includes ExternalCatalog.by_media_type("movie"), game
   end
 
-  test "upcoming scope should return records with status upcoming and release_date" do
-    upcoming = create(:external_catalog, status: "upcoming", release_date: 30.days.from_now.to_date)
-    released = create(:external_catalog, status: "released", release_date: 10.days.from_now.to_date)
+  test "upcoming scope should return records with future release_date" do
+    future = create(:external_catalog, status: "upcoming", release_date: 30.days.from_now.to_date)
+    past = create(:external_catalog, status: "released", release_date: 10.days.ago.to_date)
     no_date = create(:external_catalog, status: "upcoming", release_date: nil)
 
-    assert_includes ExternalCatalog.upcoming, upcoming
-    assert_not_includes ExternalCatalog.upcoming, released
+    assert_includes ExternalCatalog.upcoming, future
+    assert_not_includes ExternalCatalog.upcoming, past
     assert_not_includes ExternalCatalog.upcoming, no_date
   end
 

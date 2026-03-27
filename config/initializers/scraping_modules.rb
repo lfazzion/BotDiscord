@@ -13,6 +13,7 @@ Rails.application.config.after_initialize do
   require Rails.root.join('lib/scraping/services/tmdb_client')
   require Rails.root.join('lib/scraping/services/igdb_client')
   require Rails.root.join('lib/scraping/services/anilist_client')
+  require Rails.root.join('lib/scraping/services/rawg_client')
   require Rails.root.join('lib/scraping/services/events_rss_parser')
   require Rails.root.join('lib/scraping/scrapers/ferrum_scraper_base')
   require Rails.root.join('lib/scraping/scrapers/instagram_scraper')

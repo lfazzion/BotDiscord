@@ -25,6 +25,10 @@ production:
     class: CollectIgdbCatalogJob
     queue: default
     schedule: at 4am every tuesday
+  collect_rawg_catalog_job:
+    class: CollectRawgCatalogJob
+    queue: default
+    schedule: at 5am every tuesday
   collect_anilist_catalog_job:
     class: CollectAnilistCatalogJob
     queue: default

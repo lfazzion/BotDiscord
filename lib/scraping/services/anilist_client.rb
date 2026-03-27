@@ -27,9 +27,55 @@ module ScrapingServices
       }
     GRAPHQL
 
+    UPCOMING_QUERY = <<~GRAPHQL
+      query ($page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC) {
+            id
+            title { romaji english native }
+            description(asHtml: false)
+            startDate { year month day }
+            popularity
+            averageScore
+            episodes
+            coverImage { large }
+            genres
+            status
+          }
+        }
+      }
+    GRAPHQL
+
+    RELEASING_QUERY = <<~GRAPHQL
+      query ($page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC) {
+            id
+            title { romaji english native }
+            description(asHtml: false)
+            startDate { year month day }
+            popularity
+            averageScore
+            episodes
+            coverImage { large }
+            genres
+            status
+          }
+        }
+      }
+    GRAPHQL
+
     class << self
       def fetch_trending_anime(page: 1, per_page: 20)
         execute(TRENDING_QUERY, page: page, perPage: per_page)
+      end
+
+      def fetch_upcoming_anime(page: 1, per_page: 20)
+        execute(UPCOMING_QUERY, page: page, perPage: per_page)
+      end
+
+      def fetch_releasing_anime(page: 1, per_page: 20)
+        execute(RELEASING_QUERY, page: page, perPage: per_page)
       end
 
       private

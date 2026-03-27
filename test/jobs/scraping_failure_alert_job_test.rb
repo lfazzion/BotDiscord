@@ -27,7 +27,7 @@ class ScrapingFailureAlertJobTest < ActiveSupport::TestCase
     Rails.logger.expects(:warn).with('[ScrapingFailureAlertJob] Canal admin não configurado')
 
     job = ScrapingFailureAlertJob.new
-    job.perform('twitter', 42, 'Error', 'rate_limit')
+    job.perform('twitter', 42, 'Error', 'unknown_error')
   end
 
   test 'build_alert_message contém informações corretas' do

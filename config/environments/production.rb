@@ -1,8 +1,13 @@
 Rails.application.configure do
   # ── Logging ────────────────────────────────────────────────────────────────
-  # Emite logs em JSON para facilitar parsing em containers
   config.log_level = :info
   config.log_tags = [ :request_id ]
+
+  if ENV["RAILS_LOG_TO_STDOUT"].present?
+    logger = ActiveSupport::Logger.new($stdout)
+    logger.formatter = ::Logger::Formatter.new
+    config.logger = ActiveSupport::TaggedLogging.new(logger)
+  end
 
   # ── Cache ───────────────────────────────────────────────────────────────────
   # Solid Cache persiste no shard `cache` do SQLite (storage/production_cache.sqlite3)

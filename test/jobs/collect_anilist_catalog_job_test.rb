@@ -28,6 +28,8 @@ class CollectAnilistCatalogJobTest < ActiveJob::TestCase
         }
       }
     })
+    ScrapingServices::AnilistClient.stubs(:fetch_upcoming_anime).returns({ "data" => { "Page" => { "media" => [] } } })
+    ScrapingServices::AnilistClient.stubs(:fetch_releasing_anime).returns({ "data" => { "Page" => { "media" => [] } } })
 
     assert_difference 'ExternalCatalog.count', 1 do
       CollectAnilistCatalogJob.perform_now
@@ -57,6 +59,8 @@ class CollectAnilistCatalogJobTest < ActiveJob::TestCase
         }
       }
     })
+    ScrapingServices::AnilistClient.stubs(:fetch_upcoming_anime).returns({ "data" => { "Page" => { "media" => [] } } })
+    ScrapingServices::AnilistClient.stubs(:fetch_releasing_anime).returns({ "data" => { "Page" => { "media" => [] } } })
 
     CollectAnilistCatalogJob.perform_now
 
@@ -76,6 +80,8 @@ class CollectAnilistCatalogJobTest < ActiveJob::TestCase
         }
       }
     })
+    ScrapingServices::AnilistClient.stubs(:fetch_upcoming_anime).returns({ "data" => { "Page" => { "media" => [] } } })
+    ScrapingServices::AnilistClient.stubs(:fetch_releasing_anime).returns({ "data" => { "Page" => { "media" => [] } } })
 
     assert_no_difference 'ExternalCatalog.count' do
       CollectAnilistCatalogJob.perform_now
@@ -87,6 +93,8 @@ class CollectAnilistCatalogJobTest < ActiveJob::TestCase
 
   test "should not crash when client returns nil" do
     ScrapingServices::AnilistClient.stubs(:fetch_trending_anime).returns(nil)
+    ScrapingServices::AnilistClient.stubs(:fetch_upcoming_anime).returns(nil)
+    ScrapingServices::AnilistClient.stubs(:fetch_releasing_anime).returns(nil)
 
     assert_no_difference 'ExternalCatalog.count' do
       CollectAnilistCatalogJob.perform_now

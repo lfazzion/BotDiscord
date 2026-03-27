@@ -1,6 +1,6 @@
 FactoryBot.define do
   factory :external_catalog do
-    source { %w[tmdb igdb anilist].sample }
+    source { %w[tmdb igdb anilist rawg].sample }
     external_id { Faker::Number.number(digits: 6).to_s }
     title { Faker::Movie.title }
     media_type { %w[movie tv game anime].sample }
@@ -14,7 +14,7 @@ FactoryBot.define do
     metadata { {} }
     original_language { %w[en ja pt].sample }
     adult { false }
-    status { %w[upcoming released airing].sample }
+    status { %w[upcoming released airing releasing cancelled].sample }
 
     trait :tmdb do
       source { "tmdb" }
@@ -29,6 +29,11 @@ FactoryBot.define do
     trait :anilist do
       source { "anilist" }
       media_type { "anime" }
+    end
+
+    trait :rawg do
+      source { "rawg" }
+      media_type { "game" }
     end
 
     trait :with_nil_metrics do
