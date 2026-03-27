@@ -83,7 +83,7 @@ fi
 
 # ── Step 2: Get PR details ──────────────────────────────────────────
 PR_JSON=$(gh pr view "${PR_NUMBER}" --repo "${REPO}" \
-  --json 'title,author,headRefName,mergeCommit,mergedAt,mergeable')
+  --json 'title,author,headRefName,mergeCommit,mergedAt')
 
 PR_TITLE=$(echo "${PR_JSON}" | jq -r '.title')
 PR_AUTHOR=$(echo "${PR_JSON}" | jq -r '.author.login // "unknown"')
@@ -129,8 +129,7 @@ for ((i = 0; i < JOB_COUNT; i++)); do
 
   FAILED_STEPS_SUMMARY+="### Job: \`${JOB_NAME}\`"$'\n'
 
-  STEPS_JSON=$(gh api "repos/${REPO}/actions/runs/${WORKFLOW_RUN_ID}/jobs/${JOB_ID}/steps" \
-    --jq '[.steps[] | select(.conclusion == "failure")]' 2>/dev/null || echo "[]")
+  STEPS_JSON=$(echo "${FAILED_JOBS_JSON}" | jq ".[$i].steps | [.[] | select(.conclusion == \"failure\")]")
 
   STEP_COUNT=$(echo "${STEPS_JSON}" | jq 'length')
   if [[ "${STEP_COUNT}" -gt 0 ]]; then
@@ -178,7 +177,7 @@ else
 fi
 
 # ── Step 6: Create revert branch and commit ─────────────────────────
-REVERT_BRANCH="${REVERT_PREFIX}/pr-${PR_NUMBER}-$(date +%s)"
+REVERT_BRANCH="${REVERT_PREFIX}/pr-${PR_NUMBER}"
 
 log "Creating revert branch from ${MAIN_BRANCH}..."
 git fetch origin "${MAIN_BRANCH}"
@@ -191,11 +190,19 @@ PARENT_COUNT=$((PARENT_COUNT - 1))
 if [[ "${PARENT_COUNT}" -ge 2 ]]; then
   # Standard merge commit: revert with -m 1 to undo the merged tree
   log "Reverting merge commit (${PARENT_COUNT} parents) with -m 1..."
-  git revert -m 1 "${MERGE_COMMIT}" --no-edit
+  if ! git revert -m 1 "${MERGE_COMMIT}" --no-edit; then
+    log "ERROR: git revert failed. This may be due to merge conflicts."
+    log "Manual revert required for commit ${MERGE_COMMIT}"
+    exit 1
+  fi
 else
   # Squash merge: revert the single commit directly
   log "Reverting squash-merged commit (${PARENT_COUNT} parent)..."
-  git revert "${MERGE_COMMIT}" --no-edit
+  if ! git revert "${MERGE_COMMIT}" --no-edit; then
+    log "ERROR: git revert failed. This may be due to merge conflicts."
+    log "Manual revert required for commit ${MERGE_COMMIT}"
+    exit 1
+  fi
 fi
 
 git push origin "${REVERT_BRANCH}"
@@ -237,6 +244,8 @@ ${FAILED_STEPS_SUMMARY}
 ### Recovery
 A recovery branch and PR have been created so the original work can be fixed and reapplied.
 See the comment on the original PR for links.
+
+> **Note:** This revert PR requires **manual merge** once CI passes. Do not merge automatically.
 
 ---
 *Created automatically by the post-merge recovery workflow.*
