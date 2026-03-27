@@ -39,18 +39,23 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
     DiscordBotService.handle_message(event)
   end
 
-  test 'handle_message trata QuotaExceededError' do
+  test 'handle_message trata RateLimitError com fallback' do
     mock_chat = mock('chat')
-    mock_chat.stubs(:ask).raises(Llm::BaseClient::QuotaExceededError, 'quota')
+    mock_chat.stubs(:ask).raises(RubyLLM::RateLimitError, 'rate limit')
+
+    mock_fallback_chat = mock('fallback_chat')
+    mock_fallback_response = stub(content: 'resposta do fallback')
+    mock_fallback_chat.stubs(:ask).returns(mock_fallback_response)
 
     ChatSessionManager.stubs(:get_or_create).returns(mock_chat)
+    ChatSessionManager.stubs(:create_fallback_chat).returns(mock_fallback_chat)
 
     event = mock('event')
     event.stubs(:user).returns(stub(id: 123))
     event.stubs(:channel).returns(stub(id: 456, private?: false, start_typing: nil))
     event.stubs(:message).returns(stub(content: 'pergunta'))
 
-    event.expects(:respond).with('⚠️ Sistema sobrecarregado. Tente mais tarde.')
+    event.expects(:respond).with('resposta do fallback')
     DiscordBotService.handle_message(event)
   end
 

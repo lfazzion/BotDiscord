@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ExternalCatalog < ApplicationRecord
-  SOURCES = %w[tmdb igdb anilist].freeze
+  SOURCES = %w[tmdb igdb anilist rawg].freeze
   MEDIA_TYPES = %w[movie tv game anime].freeze
   STATUSES = %w[upcoming released airing].freeze
 
@@ -14,6 +14,10 @@ class ExternalCatalog < ApplicationRecord
   scope :by_source, ->(source) { where(source: source) }
   scope :by_media_type, ->(type) { where(media_type: type) }
   scope :recent, ->(days = 30) { where('created_at >= ?', days.days.ago) }
-  scope :upcoming, -> { where(status: "upcoming").where.not(release_date: nil).order(:release_date) }
+  scope :upcoming, lambda {
+    where.not(release_date: nil)
+         .where('release_date >= ?', Date.current)
+         .order(:release_date)
+  }
   scope :popular, -> { where.not(popularity: nil).order(popularity: :desc) }
 end

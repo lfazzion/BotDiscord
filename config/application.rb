@@ -17,6 +17,9 @@ module BotDiscord
     config.middleware.use config.session_store
     config.autoload_lib(ignore: %w[assets tasks scraping llm])
 
+    # Tools têm múltiplas classes por arquivo — require explícito necessário
+    Rails.autoloaders.main.ignore(Rails.root.join("app/tools"))
+
     config.active_record.database_selector = { delay: 2.seconds }
     config.active_record.database_resolver = ActiveRecord::Middleware::DatabaseSelector::Resolver
     config.active_record.database_resolver_context = ActiveRecord::Middleware::DatabaseSelector::Resolver::Session

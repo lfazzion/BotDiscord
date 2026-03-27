@@ -2,6 +2,7 @@
 
 class ChatSessionManager
   TTL_MINUTES = 30
+  FALLBACK_MODEL = 'gemini-3.1-flash-lite-preview'
 
   class << self
     def get_or_create(user_id, channel_id)
@@ -15,9 +16,7 @@ class ChatSessionManager
           return session[:chat]
         end
 
-        chat = RubyLLM.chat
-        all_tool_classes.each { |tool_class| chat.with_tool(tool_class) }
-
+        chat = build_chat
         sessions[key] = {
           chat: chat,
           expires_at: Time.current + TTL_MINUTES.minutes
@@ -25,6 +24,10 @@ class ChatSessionManager
 
         chat
       end
+    end
+
+    def create_fallback_chat
+      build_chat(model: FALLBACK_MODEL)
     end
 
     def cleanup_expired
@@ -39,6 +42,12 @@ class ChatSessionManager
     end
 
     private
+
+    def build_chat(model: nil)
+      chat = model ? RubyLLM.chat(model: model) : RubyLLM.chat
+      all_tool_classes.each { |tool_class| chat.with_tool(tool_class) }
+      chat
+    end
 
     def sessions
       @sessions ||= {}

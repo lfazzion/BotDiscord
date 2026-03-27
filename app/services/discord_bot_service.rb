@@ -10,7 +10,7 @@ class DiscordBotService
 
       bot = Discordrb::Bot.new(
         token: ENV['DISCORD_BOT_TOKEN'],
-        intents: %i[messages message_content]
+        intents: %i[servers server_messages direct_messages]
       )
 
       bot.message(content: /./) do |event|
@@ -52,7 +52,10 @@ class DiscordBotService
     def handle_message(event)
       user_id = event.user.id.to_s
       channel_id = event.channel.id.to_s
-      content = event.message.content.to_s.strip
+      content = event.message.content.to_s
+                        .gsub(/<@!?\d+>/, '')   # Remove menções <@123> ou <@!123>
+                        .gsub(/\s+/, ' ')        # Colapsa espaços extras
+                        .strip
 
       return if content.empty?
 
@@ -76,10 +79,26 @@ class DiscordBotService
         else
           event.respond(response_text)
         end
-      rescue Llm::BaseClient::QuotaExceededError
-        event.respond('⚠️ Sistema sobrecarregado. Tente mais tarde.')
+      rescue RubyLLM::ContextLengthExceededError, RubyLLM::RateLimitError,
+             RubyLLM::PaymentRequiredError, RubyLLM::OverloadedError => e
+        Rails.logger.warn "[DiscordBotService] Modelo primário falhou (#{e.class.name}), tentando fallback..."
+        begin
+          fallback_chat = ChatSessionManager.create_fallback_chat
+          response = fallback_chat.ask(content)
+          response_text = response.respond_to?(:content) ? response.content : response.to_s
+
+          if response_text.length > 2000
+            chunks = Discordrb.split_message(response_text)
+            chunks.each { |chunk| event.respond(chunk) }
+          else
+            event.respond(response_text)
+          end
+        rescue StandardError => fallback_error
+          Rails.logger.error "[DiscordBotService] Fallback também falhou: #{fallback_error.message}"
+          event.respond('⚠️ Sistema sobrecarregado. Tente mais tarde.')
+        end
       rescue StandardError => e
-        Rails.logger.error "[DiscordBotService] Erro: #{e.message}"
+        Rails.logger.error "[DiscordBotService] Erro: #{e.class.name} - #{e.message}"
         event.respond('⚠️ Erro ao processar. Tente novamente.')
       ensure
         typing_running.make_false
