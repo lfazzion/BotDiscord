@@ -1,245 +1,123 @@
 # BotDiscord — Sistema de Data Mining para Influencers
 
-Este projeto é um sistema completo de coleta de dados, análise de influencers e chatbot com integração ao Discord, construí­do utilizando Ruby on Rails 8 em modo headless.
+Este projeto é um sistema completo de coleta de dados, análise de influencers e chatbot com integração ao Discord, construído utilizando Ruby 4.0 e Ruby on Rails 8.1 em modo headless.
 
-A motivação inicial é simples: Acompanhar métricas de vários perfis (próprios e de concorrentes) sem perder horas fazendo isso manualmente. O que começou como um script simples evoluiu para um sistema robusto com mais de 25 jobs agendados, scraping automatizado com Chrome headless e um bot de Discord que responde perguntas sobre os dados coletados usando LLMs.
+A motivação inicial é simples: Acompanhar métricas de vários perfis (próprios e de concorrentes) sem perder horas fazendo isso manualmente. O que começou como um script simples evoluiu para um sistema robusto (implementado rigorosamente em 6 Fases) com dezenas de jobs agendados, scraping automatizado com Chrome headless/Python e um bot de Discord autônomo atuando como Cérebro e Interface.
 
 ## Arquitetura do Sistema
 
-O projeto segue uma arquitetura modular onde cada responsabilidade está bem isolada. O backend utiliza Rails 8 em modo headless (sem ActionView/Sprockets), servindo apenas API JSON. A escolha pelo Rails foi feita pela produtividade que o framework oferece em termos de ORM, migrations, jobs assíncronos e estrutura de pastas organizada.
+O projeto segue uma arquitetura modular onde cada responsabilidade está bem isolada. O backend utiliza Rails 8.1 em modo headless (sem ActionView/Sprockets), servindo puramente como API e maestro de enfileiramento. 
 
-Para o banco de dados, utilizei SQLite3 em modo WAL (Write-Ahead Logging). Embora muitos considerem SQLite inadequado para produção, ele funciona muito bem para aplicações de escala média e elimina a necessidade de manter um servidor de banco de dados separado. O modo WAL permite leituras concurrentes enquanto outras conexões escrevem, e o banco é servido via bind mount em Docker para garantir persistência.
+Para o banco de dados, utilizo SQLite3 em modo WAL (Write-Ahead Logging). O modo WAL permite leituras e escritas concorrentes massivas. Tudo é hospedado localmente no host dentro de containers com persistência mapeada.
 
-A fila de processamento utiliza Solid Queue (implementação de filas em Ruby baseada em SQLite), e o cache utiliza Solid Cache (cache baseado em arquivos ou SQLite). Para aplicações que não precisam de escala massiva, essa combinação elimina dependências externas como Redis.
+A fila de processamento utiliza **Solid Queue**, e o cache utiliza **Solid Cache** (ambos armazenados no SQLite). Esta combinação unificada elimina o overhead e a manutenção de infraestruturas externas como Redis ou Sidekiq.
 
 ### Stack Tecnológico
 
 | Componente | Tecnologia |
 |------------|------------|
-| Framework | Rails 8.1 (headless, sem sprockets/actionview) |
-| Banco de Dados | SQLite3 (modo WAL) |
-| Fila/Cache | Solid Queue + Solid Cache |
-| Bot | discordrb |
+| Framework | Ruby 4.0 + Rails 8.1 (headless API-only) |
+| Banco de Dados | SQLite3 (modo WAL) com backups live nativos |
+| Fila e Cache | Solid Queue + Solid Cache |
+| Interface (Bot)| discordrb (processo docker stanalone isolado) |
 | Scraping | Ferrum + Chrome headless + Python (Nodriver/Camoufox) |
-| LLM | RubyLLM + OpenRouter / Gemini 3.1 Flash Lite / Gemma 3 27B |
-| Docker | docker-compose (app, jobs, chrome) |
-| Testes | Minitest |
+| IA e Agentes | RubyLLM + Gemini 3.1 Flash / Imagen 3 / OpenRouter |
+| Infraestrutura | docker-compose multi-container (`app`, `jobs`, `bot`, etc) |
+| Bateria de Testes| Minitest (~400 testes unitários/integrados selados) |
 
 ## Técnicas de Web Scraping
 
-Um dos maiores desafios do projeto é coletar dados de sites que implementam proteções cada vez mais sofisticadas. Em 2016, fazer scraping era trivial — bastava uma requisição HTTP simples com um User-Agent decente. Hoje, metade dos sites retorna "Are you a robot?" e a outra metade renderiza todo o conteúdo em JavaScript do lado do cliente.
+Um dos maiores desafios do projeto é coletar dados de redes fechadas com muros de login ou de sites altamente dinâmicos. Lidamos de forma proativa com os 4 obstáculos centrais em 2026:
 
-### Os Quatro Obstáculos
+1. **Client-Side Rendering (SPAs):** Resolvidos com sessões manipuladas em Chromium Headless.
+2. **Defesas Bot:** Delays randômicos, injeções via CDP page scripts e spoofs.
+3. **Escudo WAF/CDP:** Bypass de Headers clássico (alterando Host de WebSocket connections) e stealth requests.
+4. **Dom quebra-galho:** Seletores estáticos tendem a morrer; a coleta ocorre baseada na estrutura dom ou via Fallback Gracioso, aceitando `og:tags` primários e limitando qualidade, sem crash.
 
-O sistema enfrenta quatro desafios principais ao fazer scraping na web moderna:
+### Stack de Scraping Multi-linguagem
 
-O primeiro obstáculo são as SPAs (Single Page Applications) que renderizam conteúdo exclusivamente no cliente. Não existe HTML no response do servidor — tudo vem via JavaScript. Para isso, utilizo Ferrum, uma biblioteca Ruby que controla o Chrome headless via DevTools Protocol. O Chrome executa o JavaScript e retorna o DOM pronto.
-
-O segundo obstáculo é a detecção de bots. Sites implementam algoritmos que analisam comportamento de navegação, headers, timing entre requisições e padrões de mouse/teclado. A solução envolve randomizar delays, usar proxies residenciais e configurar headers realistas.
-
-O terceiro obstáculo são os CDPs (Customer Data Platforms) de anti-bot como DataDome. Esses serviços usam o Chrome DevTools Protocol para detectar automação. A técnica do "Host Header Bypass" permite enganar essas proteções fingindo que a requisição vem de um domínio diferente.
-
-O quarto obstáculo são sites que mudam sua estrutura HTML diariamente para dificultar parsing. Isso exige pipelines de descoberta que detectam mudanças automaticamente e se adaptam sem intervenção humana.
-
-### Stack de Scraping
-
-O sistema utiliza múltiplas abordagens dependiendo da dificuldade do alvo:
-
-Ferrum com Chrome headless é a abordagem principal para sites com JavaScript. O Chrome roda em um container Docker separado, e o Ruby se conecta via WebSocket. Essa configuração permite escalar horizontalmente adicionando mais containers de Chrome.
-
-Para sites com proteções avançadas, utilizo Python com bibliotecas como Nodriver (selenium webdriver manager) e Camoufox (Firefox headless com configurações de stealth). A integração entre Ruby e Python acontece via jobs assíncronos que passam dados entre os serviços.
+O Ferrum (`Ruby`) conversando com o Chrome headless é nossa linha de frente. No entanto, para portais endurecidos, alocamos os workers que engatilham o `python-scraper` sidecar que explora ferramentas avançadas criadas em Python como Nodriver e Camoufox, gerando fingerprints quase indistinguíveis de Safari em iOS.
 
 ## Design de Dados e Regras de Negócio
 
 ### Nulo versus Zero
+Decisão de vida e morte analítica: Se uma API falha em retornar o número de visualizações, inserimos `nil` no banco. Zero (`0`) significa que a foto flopou completamente (zero interações reais). Ignorar Nulos usando o `.compact` previne um viés de esmagamento contra médias reais se a coleta cair momentaneamente.
 
-Uma decisão de design crítica foi nunca usar `default: 0` em colunas numéricas que representam métricas sociais (likes, views, followers). Quando uma API bloqueia ou rate-limit acontece, o correto é salvar `nil`, nunca `0`.
+### Extrema Idempotência e Tratamento de Rate Limit
+Todos os *colectors* são resilientes, sem side-fx caso instanciados 20 vezes juntas. Existe um Snapshot Dedup Window de 2 a horas blindando replicação estúpida. Não fazemos loops retry em HTTP 429 ou 403. Falhas críticas disparam silenciosamente throttling de Alerta ao Dev por discord, e os proxy-pools descansam pelo menos durantes as próximas 6-12 horas. 
 
-A diferença é conceitual importante: zero é um valor válido (o post teve zero likes), enquanto nil significa "não sei" ou "não consegui coletar". Em queries que calculam médias, utilizo `.compact` para ignorar valores nulos e evitar distorções nos resultados.
+## Tool Calling e A IA Soberana (Tooling)
 
-### Idempotência
+Este projeto possui algo superior a dashboards chatos e planilhas BI: O usuário envia comandos ao Discord em linguagem humana natural. A LLM assume e usa tool calling integrado para extrair as respostas da base. 
 
-Todas as operações de coleta são idempotentes. Isso significa que rodar o mesmo job múltiplas vezes produz o mesmo resultado final. Isso é crucial para jobs que podem falhar por timeout ou rede instável — ao rodar novamente, não criamos duplicatas nem corrompemos dados.
+Atualmente temos **mais de 16 subclasses de ferramentas** mapeadas ao `RubyLLM`, herdando defesas arquiteturais:
+- O Bot nunca formata string via terminal para a IA; tudo são hashes puras injetáveis de alta performance.
+- Tools base do App contêm **silent clamps** (`[ [X, 1].max, 50].min`) impedindo requisições perigosamente pesadas pelo AI.
 
-Jobs de scraping verificam existência de registros antes de criar, usando combination de unique keys. Atualizações sempre verificam se houve mudança antes de persistir, evitando writes desnecessários.
+Nossas capabilities extrapolam texto com suporte ao **Gemini Imagen 3**. O sistema consegue gerar referências criativas customizadas baseadas na própria IA lendo cenários dos concorrentes da creator.
 
-## Tool Calling com LLMs
+### Prompting como Código (Prompts YAML)
 
-Uma das features mais interessantes é o bot que consulta o banco de dados autonomamente. Utilizando RubyLLM, o sistema configura ferramentas que a LLM pode chamar diretamente:
+Sem Strings hardcoded em serviços. Todos os prompts, pedaços de oráculo e restrições estão organizados em `config/prompts/*.yml`. Tudo flui usando interpolação de varávies dinâmicas injectando sempre `<current_datetime>` corrigindo a desorientação crônica de modelos fundamentais.
 
-A LLM recebe um schema do banco de dados e pode executar queries SQL através de tools definidas em YAML. Perguntas como "qual post teve mais engajamento essa semana?" são interpretadas, convertidas em SQL, executadas, e os resultados são formatados em linguagem natural.
+## Jobs Agendados, Alertas e Auto-Healing
 
-Essa abordagem elimina a necessidade de criar endpoints API para cada pergunta possível — a LLM constrói queries dinamicamente baseadas no que o usuário quer saber.
-
-### Prompts Componíveis
-
-Os prompts do sistema são definidos em arquivos YAML em vez de strings hardcoded no código. Isso permite:
-
-Editar prompts sem mexer no código Ruby, versionar prompts via Git, testar diferentes versões de prompts em produção, e construir prompts compostos incluindo outros snippets menores.
-
-O sistema de "Oracle" adiciona contexto que o algoritmo não vê — informações sobre tendências, eventos atuais, e dados históricos que ajudam a LLM a gerar insights mais relevantes.
-
-## Pipeline de Descoberta
-
-Além de coletar dados de perfis conhecidos, o sistema inclui um pipeline de descoberta que minerar perfis autonomamente. Given uma lista de perfis iniciais, ele:
-
-Explora quem esses perfis seguem e quem os segue, identifica padrões de nicho e categorias, sugere novos perfis para monitorar, e detecta quando um perfil começa a crescer rapidamente.
-
-Esse pipeline roda periodicamente e expande a lista de alvos automaticamente, reduzindo trabalho manual de pesquisa.
-
-## Interface via Discord
-
-O Discord serve como interface de administração e consumo do sistema. Ao invés de criar uma dashboard web, utilizei o próprio Discord que a usuário já usa diariamente:
-
-Comandos de slash permitem consultar métricas, digests diários são enviados automaticamente com resumo do desempenho, alertas notificam sobre mudanças significativas, e o bot responde perguntas em linguagem natural sobre os dados.
-
-## Jobs Agendados
-
-O sistema possui mais de 25 jobs agendados que executam periodicamente:
-
-Jobs de coleta rodam em diferentes frequências — alguns a cada hora, outros diariamente ou semanalmente. Jobs de limpeza removem dados antigos ou duplicados. Jobs de análise calculam métricas agregadas e detectam anomalias. Jobs de notificação enviam alerts e digests.
-
-Cada job é independente e pode ser executado manualmente se necessário. A idempotência garante que falhas temporárias não causem problemas.
+O servidor cron nativo opera relógios orgânicos de mineração de mercado:
+- O **Pipeline de Descoberta** vasculha URLs e menções encontrando concorrentes automaticamente.
+- O Discord Notifica imediatamente se health-checks ou a rotina crasher, usando limitadores de SPAM em Solid Cache (`AlertThrottler`).
+- Entregas programadas pelo Sistema de Digests passivos: O `FridayIdeationJob` manda ideias incríveis pro fim de semana e os resumos de performance na segunda, tudo gerado autonomamente.
 
 ## Executando o Projeto
 
+O setup inteiro se compõe perfeitamente pelo Compose em Linux/Mac.
+
 ### Pré-requisitos
+- Docker e Docker Compose instalados e configurados.
+- Variáveis no seu novo `.env` (Use o `.env.example` como guia).
 
-- Docker e Docker Compose instalados
-- Arquivo `.env` com variáveis de ambiente (ver `.env.example` se existir)
-
-### Passo a Passo
-
-#### 1. Criar arquivo de ambiente
-
-```bash
-cp .env.example .env  # ou criar manualmente
-```
-
-Edite o `.env` e configure as variáveis necessárias:
-- `DATABASE_URL` (opcional, usa SQLite por padrão)
-- Variáveis do Discord (se usar o bot)
-- Variáveis da LLM (se usar scraping com IA)
-
-#### 2. Subir os containers
+### Subindo os Serviços
 
 ```bash
 docker-compose -f docker/docker-compose.yml up -d
 ```
+Verifique via `docker ps` os **5 micro-serviços** criados:
+- **app**: Puma (Backend / Headless REST).
+- **jobs**: O Enfileirador pesado (Solid Queue daemon).
+- **chrome**: Sandbox de renderização DevTools Protocol.
+- **discord-bot**: Célula chat-bot de altíssima resiliência, auto-run.
+- **python-scraper**: Container Python pronto pro trabalho imundo contra proteções modernas.
 
-Isso sobe 3 serviços:
-- **app**: Rails Puma na porta 3000
-- **jobs**: Solid Queue workers
-- **chrome**: Chrome headless na porta 9222
+### Comandos de Utilidade (Sempre dockerizados)
 
-#### 3. Verificar se está funcionando
-
+Verificando funcionamento (retorna status HTTP blindados):
 ```bash
-# Verificar status dos containers
-docker ps
-
-# Testar endpoint da aplicação
+curl http://localhost:3000/health
 curl http://localhost:3000/up
-# Retorna HTML com fundo verde se OK
 ```
 
-#### 4. Ver logs
-
+Para atualizar o Banco de dados recém-nascido e observar os logs:
 ```bash
-# Todos os serviços
-docker-compose -f docker/docker-compose.yml logs -f
-
-# Serviço específico
-docker logs docker-app-1
-docker logs docker-jobs-1
-docker logs docker-chrome-1
+docker-compose -f docker/docker-compose.yml exec app bin/rails db:migrate
+docker-compose -f docker/docker-compose.yml logs -f discord-bot
 ```
 
-### Comandos Úteis
-
-#### Acessar console do Rails (dentro do container)
-
+Rodando a suíte incansável de testes (Apenas inicie e espere 0 failures com o run selado):
 ```bash
-docker exec -it docker-app-1 bin/rails console
+docker-compose -f docker/docker-compose.yml run --rm test
 ```
 
-#### Executar migrations manualmente
+## Arquitetura de Banco Simplificada (E Backups Livres)
 
-```bash
-docker exec -it docker-app-1 bin/rails db:migrate
-```
+Tudo jaz e prospera silenciosamente em `/storage`. O Rails faz pooling para `primary`, `queue` e `cache` apontando pro mesmíssimo SQLite em host mount. Por fim, o projeto inclui backup automatizado contornando lock de DB: O Job de sistema (`SqliteBackupJob`) e script `.sh` copia via integridade pura WAL assegurando blindagem máxima.
 
-#### Ver jobs ativos
+## Lições Aprendidas Consolidadas (Base de Conhecimento MEMORY)
 
-```bash
-docker exec -it docker-app-1 bin/rails runner "puts SolidQueue::Process.count"
-```
+Esses paradigmas são absolutos durante o life-cycle de updates deste software em 2026:
+- **A Ditadura Ruby 4.0:** OpenStruct foi morto. Usamos apenas e obrigatoriamente class mocks em testes nativos para aguentares as novas métricas da Engine base.
+- **Mocha x SQLite Connection Pool:** Mocks de instâncias do DB exigem extrema destreza no clear pós-teste, caso contrário o Connection Pool transfere os objetos de stub sujos para a próxima asserção comendo a memória e soltando erros bizarros.
+- **Bots são melhores que frontends:** Trocar meses de React por puro botting textual agilizou o feedback passivo do usuário infinitamente mais.
 
-#### Parar todos os serviços
-
-```bash
-docker-compose -f docker/docker-compose.yml down
-```
-
-#### Rebuild (após mudanças no código)
-
-```bash
-docker-compose -f docker/docker-compose.yml build
-docker-compose -f docker/docker-compose.yml up -d
-```
-
-### Desenvolvimento Local (sem Docker)
-
-```bash
-# Instalar dependências
-bundle install
-
-# Rodar migrations
-bin/rails db:migrate
-
-# Iniciar workers
-bin/rails jobs:work
-
-# Em outro terminal, iniciar servidor
-bin/rails server
-
-# Rodar testes
-bin/rails test
-```
-
-### Estrutura dos Bancos de Dados
-
-O projeto usa SQLite com 3 conexões separadas:
-
-| Conexão | Arquivo | Uso |
-|---------|---------|-----|
-| primary | storage/production.sqlite3 | Tabelas da aplicação |
-| queue | storage/production.sqlite3 | Tabelas do Solid Queue |
-| cache | storage/production.sqlite3 | Tabelas do Solid Cache |
-
-Todas apontam para o mesmo arquivo via bind mount, garantindo que app e jobs compartilhem os dados.
-
-### Troubleshooting
-
-**Jobs não iniciam**: Verifique se migrations rodaram (`docker logs docker-app-1`)
-
-**Database locked**: O app e jobs podem estar conflitando. Tente reiniciar apenas o jobs: `docker restart docker-jobs-1`
-
-**Chrome não responde**: Verifique se o container chrome está rodando: `docker ps | grep chrome`
-
-## Lições Aprendidas
-
-Durante o desenvolvimento, algumas lições importantes emergiram:
-
-Começar pelo desejo do usuário, não pela arquitetura. O sistema evoluiu naturalmente a partir das necessidades reais, não de um design previa.
-
-SQLite em produção funciona. Com o modo WAL e configuração correta de concorrência, SQLite behaves como um banco de dados moderno com todas as features necessárias.
-
-O custo real do scraping vai além do código. Manter scrapers funcionando requer investimento contínuo em adaptar-se a mudanças nos sites alvos.
-
-O bot como interface é mais natural para usuários não-técnicos. Ao invés de aprender uma nova ferramenta, eles usam algo que já conhecem.
-
-Software nunca está "pronto". O sistema continua evoluindo com novas features e ajustes baseados no uso real.
+---
 
 ## Licença
 
