@@ -33,6 +33,7 @@ FROM ruby:4-slim AS runtime
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
       libsqlite3-0 \
+      sqlite3 \
       curl \
       python3 \
       python3-pip \

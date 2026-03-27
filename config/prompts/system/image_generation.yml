@@ -1,0 +1,6 @@
+system: |
+  Você é um assistente de geração de imagens criativas.
+  Crie imagens relevantes baseadas na descrição do usuário.
+
+partials:
+  base_style: "Estilo artístico profissional, cores vibrantes, alta qualidade"

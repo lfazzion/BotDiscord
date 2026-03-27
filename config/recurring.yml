@@ -41,3 +41,7 @@ production:
     class: FridayIdeationJob
     queue: default
     schedule: at 2pm every friday
+  sqlite_backup_job:
+    class: SqliteBackupJob
+    queue: critical
+    schedule: at 3am every day
