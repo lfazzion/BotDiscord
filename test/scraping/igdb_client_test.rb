@@ -3,6 +3,10 @@
 require 'test_helper'
 
 class IgdbClientTest < ActiveSupport::TestCase
+  teardown do
+    ScrapingServices::IgdbClient.reset_access_token
+  end
+
   test "fetch_popular_games returns parsed JSON on success" do
     ENV.stubs(:fetch).with('IGDB_CLIENT_ID').returns('test_client_id')
     ENV.stubs(:fetch).with('IGDB_CLIENT_SECRET').returns('test_client_secret')
