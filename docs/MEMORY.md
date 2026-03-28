@@ -10,6 +10,12 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **[2026-03-28]** Infraestrutura Oracle Cloud + Deploy CI/CD.
+  - Deploy automatizado via GitHub Actions (`.github/workflows/deploy.yml` + `.github/scripts/deploy.sh`)
+  - SSH deploy com detecção de mudanças Docker/Gemfile para rebuild inteligente
+  - Setup script Oracle Cloud VM (`scripts/oracle-cloud-setup.sh`) — 9 fases (OS, SSH, iptables, Fail2Ban, swap, Docker, kernel, deploy dir)
+  - Documentação: Oracle Cloud Free Tier (24GB RAM, 4 OCPUs Ampere A1) + Guia de setup VM
+  - Decisão: Oracle Cloud Always Free como hospedagem (sobra 85% de RAM para workload)
 - **[2026-03-26]** Fase 6 implementada: Lapidação e Operação Segura.
   - Health check enriquecido (`/health`) com DB check
   - Alertas automáticos de falha de scraping via Discord (`ScrapingFailureAlertJob`)
@@ -120,6 +126,7 @@ rg "<palavra-chave do problema>" docs/memory/
 
 | Data | Ação | Seção Afetada |
 |------|------|---------------|
+| 2026-03-28 | Infraestrutura Oracle Cloud + Deploy CI/CD: workflow GitHub Actions, deploy script SSH, setup script VM (9 fases), docs Free Tier + setup guide. Decisão: Oracle Always Free como hospedagem. | Contexto Ativo |
 | 2026-03-26 | Fase 6 implementada: health check, scraping alerts, image gen, SQLite backup. Padrões ratificados: ruby_llm 1.14, sem OpenStruct em Ruby 4.0, safe navigation para $CHILD_STATUS, mocks para DB em integration tests. Lições: to_s(:db) não funciona em Ruby 4.0, stubs Mocha vazam em connection pool. | Contexto Ativo, Padrões Ratificados, Lições Aprendidas |
 | 2026-03-23 | Fase 5 implementada: Discord Bot + 16 tools + digest jobs. Padrões ratificados: discordrb 3.7, requires explícitos em tests, partials com prefixo `_`. | Contexto Ativo, Padrões Ratificados |
 | 2026-03-22 | Criação inicial do MEMORY.md com padrões ratificados extraídos do AGENTS.md e docs/ | Todas |
