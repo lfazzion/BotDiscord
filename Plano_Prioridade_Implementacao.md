@@ -442,9 +442,9 @@
 4.  **Documentar Provedores Candidatos e Restrições Reais:**
     *   Registrar prós, contras e bloqueios de cada opção analisada.
     *   Observações iniciais importantes:
-        * **Render**: possui free para web services, mas não é solução ideal quando você depende de cron pago ou workers contínuos fora da camada free. :contentReference[oaicite:1]{index=1}
-        * **Railway**: é prática para deploy rápido, mas hoje não é um “free tier permanente” simples; começa com trial/créditos e depois entra em custo. :contentReference[oaicite:2]{index=2}
-        * **Koyeb**: hoje oferece uma Free Instance com 512MB RAM, 0.1 vCPU e 2GB SSD; pode servir para MVP, mas o scale-to-zero após 1 hora sem tráfego precisa ser considerado se o bot exigir processo sempre ativo. :contentReference[oaicite:3]{index=3}
+        * **Render**: possui free para web services, mas não é solução ideal quando você depende de cron pago ou workers contínuos fora da camada free.
+        * **Railway**: é prática para deploy rápido, mas hoje não é um "free tier permanente" simples; começa com trial/créditos e depois entra em custo.
+        * **Koyeb**: hoje oferece uma Free Instance com 512MB RAM, 0.1 vCPU e 2GB SSD; pode servir para MVP, mas o scale-to-zero após 1 hora sem tráfego precisa ser considerado se o bot exigir processo sempre ativo.
     *   O plano deve deixar claro qual opção é “boa para MVP/teste” e qual é “boa para operação contínua”.
 
 5.  **Empacotamento Reprodutível com Docker:**
