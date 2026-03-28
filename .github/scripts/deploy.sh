@@ -56,8 +56,14 @@ set -euo pipefail
 
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
 MIGRATE_LOG=$(mktemp /tmp/deploy-migrate-XXXXXX.log)
+LOCAL=""
 
 rollback() {
+  if [[ -z "${LOCAL}" ]]; then
+    echo "[deploy] ERROR: Deploy failed before snapshot — cannot rollback automatically"
+    echo "[deploy] Manual intervention required."
+    return 1
+  fi
   echo "[deploy] ERROR: Deploy failed — rolling back to ${LOCAL:0:7}..."
   git checkout "${LOCAL}" -- . 2>/dev/null || true
   ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot 2>/dev/null || true
