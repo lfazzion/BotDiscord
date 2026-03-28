@@ -28,3 +28,4 @@ db/*.sqlite3-shm
 /config/credentials.yml.enc
 .env
 .env.*
+!.env.example

@@ -1,0 +1,9 @@
+# Force LF for shell scripts (Docker/Linux compatibility)
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.rb text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
