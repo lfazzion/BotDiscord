@@ -10,6 +10,15 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **[2026-03-28]** Correções críticas de infra (PR #9: `fix/deploy-infrastructure`).
+  - Deploy rollback simplificado: `git reset --hard` + `docker compose build` (remove snapshot_images() quebrado)
+  - Migration falha agora chama rollback e para deploy (era WARNING que continuava)
+  - Docker GPG key fingerprint verification no setup (proteção MITM)
+  - Detecção dinâmica de SUDO_USER em vez de hardcoded "ubuntu"
+  - `.gitattributes` para forçar LF em scripts (.sh/.py/.rb/.yml) — previne CRLF no Windows
+  - `.env.example` com variáveis de ambiente documentadas
+  - Auditoria de segurança: 16 findings em docs/audit_deploy_setup.md
+  - 407 testes passando (0 failures, 0 errors)
 - **[2026-03-28]** Infraestrutura Oracle Cloud + Deploy CI/CD.
   - Deploy automatizado via GitHub Actions (`.github/workflows/deploy.yml` + `.github/scripts/deploy.sh`)
   - SSH deploy com detecção de mudanças Docker/Gemfile para rebuild inteligente
@@ -58,6 +67,7 @@
 | 2026-03-14 | SQLite WAL mode, 3 databases (primary, queue, cache) | Performance + simplicidade operacional |
 | 2026-03-14 | Headless Rails (sem ActionView/Sprockets) | API-only, sem frontend server-rendered |
 | 2026-03-14 | Jobs idempotentes com dedup window de 2h | Safe to re-run sem duplicatas |
+| 2026-03-28 | `.gitattributes` obrigatório para LF em scripts (.sh/.py/.rb/.yml) | Windows core.autocrlf=true converte para CRLF, quebrando scripts shell no Docker/Linux | `docs/MEMORY.md` |
 | 2026-03-13 | Gemini Flash como modelo primário de análise | Custo-benefício vs. capacidade — pesquisa em `docs/comparativo_IA_gemini_gemma.md` |
 
 ---
@@ -75,6 +85,8 @@
 | 2026-03-26 | `TimeWithZone#to_s(:db)` raises `ArgumentError: wrong number of arguments` em Ruby 4.0 | `to_s` não aceita argumentos de formato em Ruby 4.0 | Usar `strftime("%Y-%m-%d %H:%M:%S")` |
 | 2026-03-26 | Stubs Mocha em `ActiveRecord::Base.connection` vazam entre integration tests | Connection pool reutiliza o mesmo objeto connection entre tests | Usar mock objects (`mock('connection')`) em vez de stubs diretos + `Mocha::Mockery.instance.teardown` no teardown |
 | 2026-03-26 | `require_relative` errado em test de concern (`test/jobs/concerns/`) | Arquivo em subdiretório requer `../../../` em vez de `../../` para sair do concern | Verificar path relativo considerando profundidade do diretório |
+| 2026-03-28 | Deploy rollback com snapshot_images() era ineficaz | Snapshot tirado DEPOIS do `git pull` capturava imagens do novo código quebrado, não do código anterior funcional. Rollback marcava imagens atuais com `-rollback` em vez de restaurar as anteriores | Simplificar: `git reset --hard` + `docker compose build` para rebuild do código anterior |
+| 2026-03-28 | Migration falha não parava deploy | deploy.sh usava `WARNING` + `cat` sem `exit 1`, continuava deploy com banco incompatível | Adicionar `rollback` + `exit 1` no bloco de falha de migration |
 
 <!-- Template para novas entradas:
 | YYYY-MM-DD | Descrição concisa do bug | O que causou | Como foi resolvido (`arquivo.rb`, classe, método) |
@@ -126,6 +138,7 @@ rg "<palavra-chave do problema>" docs/memory/
 
 | Data | Ação | Seção Afetada |
 |------|------|---------------|
+| 2026-03-28 | Write-back PR #9: correções deploy/infra. Padrão ratificado: .gitattributes LF. Lições: snapshot_images broken, migration falha não parava deploy. Contexto atualizado. | Contexto Ativo, Padrões Ratificados, Lições Aprendidas, Log |
 | 2026-03-28 | Correções deploy.sh: rollback com git reset --hard (em vez de git checkout), snapshot de Docker image IDs pré-deploy para possibility de rollback completo de containers. | Contexto Ativo |
 | 2026-03-28 | Infraestrutura Oracle Cloud + Deploy CI/CD: workflow GitHub Actions, deploy script SSH, setup script VM (9 fases), docs Free Tier + setup guide. Decisão: Oracle Always Free como hospedagem. | Contexto Ativo |
 | 2026-03-26 | Fase 6 implementada: health check, scraping alerts, image gen, SQLite backup. Padrões ratificados: ruby_llm 1.14, sem OpenStruct em Ruby 4.0, safe navigation para $CHILD_STATUS, mocks para DB em integration tests. Lições: to_s(:db) não funciona em Ruby 4.0, stubs Mocha vazam em connection pool. | Contexto Ativo, Padrões Ratificados, Lições Aprendidas |
