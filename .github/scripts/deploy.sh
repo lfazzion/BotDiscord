@@ -51,12 +51,19 @@ fi
 # ─── Deploy ─────────────────────────────────────────────────────────
 log "Deploying to ${SSH_USER}@${SSH_HOST}:${PROJECT_PATH}..."
 
-remote bash <<'DEPLOY_SCRIPT'
+remote "PROJECT_PATH='${PROJECT_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'DEPLOY_SCRIPT'
 set -euo pipefail
 
-PROJECT_PATH="'"${PROJECT_PATH}"'"
-DEPLOY_BRANCH="'"${DEPLOY_BRANCH}"'"
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
+MIGRATE_LOG=$(mktemp /tmp/deploy-migrate-XXXXXX.log)
+
+rollback() {
+  echo "[deploy] ERROR: Deploy failed — rolling back to ${LOCAL:0:7}..."
+  git checkout "${LOCAL}" -- . 2>/dev/null || true
+  ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot 2>/dev/null || true
+  echo "[deploy] Rollback attempted. Manual intervention may be required."
+}
+trap rollback ERR
 
 cd "${PROJECT_PATH}"
 
@@ -94,9 +101,10 @@ else
 fi
 
 echo "[deploy] Running migrations..."
-${DOCKER_COMPOSE} run --rm --entrypoint bin/rails app db:migrate 2>/dev/null || {
-  echo "[deploy] Migration step skipped (might be handled by entrypoint)"
-}
+if ! ${DOCKER_COMPOSE} run --rm --entrypoint bin/rails app db:migrate >"${MIGRATE_LOG}" 2>&1; then
+  echo "[deploy] WARNING: Migration failed — see ${MIGRATE_LOG} for details"
+  cat "${MIGRATE_LOG}"
+fi
 
 echo "[deploy] Restarting services..."
 ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot

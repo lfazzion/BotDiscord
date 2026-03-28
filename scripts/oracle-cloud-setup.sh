@@ -235,8 +235,8 @@ net.ipv4.tcp_tw_reuse = 1
 fs.file-max = 2097152
 fs.inotify.max_user_watches = 524288
 
-# Memory — OOM killer mais agressivo com processos runaway
-vm.overcommit_memory = 1
+# Memory — heurístico padrão, evita OOM kills agressivos
+vm.overcommit_memory = 0
 vm.panic_on_oom = 0
 
 # Chromium/Chrome headless
