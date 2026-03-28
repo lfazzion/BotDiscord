@@ -179,7 +179,20 @@ apt-get remove -y -qq docker docker-engine docker.io containerd runc 2>/dev/null
 
 # Adicionar repositório oficial Docker
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+DOCKER_GPG_TMP=$(mktemp)
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o "$DOCKER_GPG_TMP"
+DOCKER_FP=$(gpg --with-colons --import-options show-only --import "$DOCKER_GPG_TMP" 2>/dev/null \
+  | awk -F: '/^fpr:/{print $10; exit}')
+EXPECTED_DOCKER_FP="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+if [[ "$DOCKER_FP" != "$EXPECTED_DOCKER_FP" ]]; then
+  rm -f "$DOCKER_GPG_TMP"
+  err "Docker GPG key fingerprint mismatch!"
+  err "Got:      ${DOCKER_FP:-<empty>}"
+  err "Expected: ${EXPECTED_DOCKER_FP}"
+  exit 1
+fi
+gpg --dearmor -o /etc/apt/keyrings/docker.gpg < "$DOCKER_GPG_TMP"
+rm -f "$DOCKER_GPG_TMP"
 chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
@@ -213,9 +226,14 @@ systemctl restart docker
 systemctl enable docker
 ok "Docker daemon configurado (live-restore, logs limitados, metrics)"
 
-# Adicionar usuário ubuntu ao grupo docker
-usermod -aG docker ubuntu
-ok "Usuário ubuntu adicionado ao grupo docker"
+# Adicionar usuário ao grupo docker
+DOCKER_USER="${SUDO_USER:-$(logname 2>/dev/null || echo ubuntu)}"
+if id "${DOCKER_USER}" &>/dev/null; then
+  usermod -aG docker "${DOCKER_USER}"
+  ok "Usuário ${DOCKER_USER} adicionado ao grupo docker"
+else
+  err "Usuário ${DOCKER_USER} não existe — adicione manualmente: usermod -aG docker <usuario>"
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 8: Otimizações de kernel
