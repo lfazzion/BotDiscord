@@ -1,8 +1,8 @@
 # Audit de Segurança — deploy.sh + oracle-cloud-setup.sh
 
-> **Data:** 2026-03-28
+> **Data:** 2026-03-29
 > **Escopo:** `.github/scripts/deploy.sh`, `scripts/oracle-cloud-setup.sh`
-> **Objetivo:** Identificar brechas e fragilidades que impedem uso seguro em produção
+> **Objetivo:** Identificar brechas e fragilidades que impedem uso seguro em produção, com contexto de recomendações do Estado da Arte.
 
 ---
 
@@ -12,161 +12,96 @@
 
 **A1. `StrictHostKeyChecking=no` permite MITM**
 - Linha 28: `-o StrictHostKeyChecking=no`
-- O SSH não verifica a identidade do host. Qualquer atacante na rede entre o
-  runner do GitHub Actions e a VM pode interceptar a conexão.
-- **Correção:** Remover a flag. Na primeira execução, fazer `ssh-keyscan` e
-  registrar o host key no `known_hosts`. Nas execuções subsequentes, o SSH
-  valida automaticamente.
+- Qualquer atacante na rede entre o runner do GitHub Actions e a VM pode interceptar a conexão (MITM).
+- **Correção (Estado da Arte):** Apenas usar `ssh-keyscan` no runtime diminui, mas não encerra o risco (TOFU). O padrão da indústria em CI/CD é salvar e validar firmemente a public key real via secret no GitHub (`SSH_KNOWN_HOSTS`) e injetá-la no runner em runtime, ou alternativamente abrandar com o parametro menos agressivo `StrictHostKeyChecking=accept-new` (SSH versão >= 7.6).
 
-**A2. Diff entre commits já avançados (git diff quebrado)**
-- Linhas 80-81: `LOCAL=$(git rev-parse HEAD)` é capturado ANTES do pull.
-- Linha 93: `git diff --name-only "${LOCAL}" "${REMOTE}"` — mas depois do
-  `git pull` (linha 90), o HEAD já aponta para REMOTE. O diff compara o
-  commit antigo com o novo — isso está correto, mas `CHANGED` lista arquivos
-  que foram modificados. Se o pull trouxer merge commits, o diff pode não
-  refletir corretamente o que mudou.
-- **Correção:** Usar `git diff --name-only "${LOCAL}..HEAD"` após o pull,
-  ou capturar `REMOTE` como commit hash em vez de `origin/main`.
+**A3. Sem deploy lock — concorrência e race condition**
+- Duplos disparos simultâneos desencadeiam `docker build` concorrentes.
+- **Correção (Estado da Arte / Evitar Overengineering):** Criar subistemas de `flock` bashológicos é obsoleto e complexo. Simplesmente adicione a chave `concurrency: production_deploy` (ou similar) no arquivo YAML do workflow do próprio GitHub Actions.
 
-**A3. Sem deploy lock — dois deploys simultâneos corrompem tudo**
-- Não existe nenhum mecanismo de lock. Se dois workflows do GitHub Actions
-  rodarem ao mesmo tempo (ex: push rápido em sequência), ambos fazem
-  `git pull` + `build` + `migrate` concorrentemente.
-- **Correção:** Usar `flock` na VM ou criar um lock file antes de iniciar.
-
-**A4. Rollback não reverte migrations**
-- Se a migration rodou com sucesso mas o health check falhou depois, o
-  rollback faz `git reset` + `build`, mas o banco já tem a migration
-  aplicada. O código antigo pode ser incompatível com o schema novo.
-- **Correção:** Guardar o version de migration antes do deploy. No rollback,
-  rodar `db:migrate:down` ou `db:rollback` para a versão anterior.
-
-**A5. `|| true` no rollback mascara falhas reais**
-- Linhas 68-71: todos os comandos do rollback terminam com `|| true`.
-  Se o `git reset` falhar, o deploy "sucede" do ponto de vista do
-  GitHub Actions (exit code 0 do heredoc).
-- **Correção:** O rollback deve logar cada falha e retornar exit code
-  não-zero se qualquer passo falhar. O `trap rollback ERR` não ajuda
-  porque o rollback já é chamado pelo trap — o `|| true` impede que
-  o trap propague o erro original.
+**A5. `|| true` no rollback anula visibilidade de falhas**
+- Linhas 68-71: Os atenuantes como `|| true` disfarçam erros no fallback. O `trap rollback ERR` absorve as falhas, encerra o container antigo no ar e mesmo assim emite Exit Code 0 para o GitHub.
+- **Correção:** Garantir rigorosamente que a rotina `rollback() {...}` remova o silenciamento passivo das instruções e finalize sua scope com um claro e direto `exit 1` ao notificar o alerta pra manter o job na cor vermelha.
 
 ### 🟡 Médio
 
-**A6. Health check falso — `docker compose ps` não testa o serviço**
-- Linha 127: `${DOCKER_COMPOSE} ps` apenas mostra se os containers estão
-  rodando, não se o serviço responde. Um Puma com erro de boot aparece
-  como "running" mas não serve requests.
-- **Correção:** Fazer `curl -f http://localhost:3000/up` (Rails health
-  endpoint) ou usar `docker compose exec app bin/rails runner "puts :ok"`.
+**A2. Diff frágil na identificação de alterações (git diff quebradiço)**
+- Linhas 80-81 e 93: O pareamento via hashes extraídas com antecedência `"$LOCAL"` ao invés da pointer reference pós-pull sofre desvios se o merge não constar como fast-forward.
+- **Correção:** Adotar abordagens nativas unificadas após o git fetch/pull, como `git diff --name-only ORIG_HEAD HEAD` para varrer rigorosamente as mutações atuais.
 
-**A7. Migrate log em /tmp pode sumir**
-- Linha 58: `mktemp /tmp/deploy-migrate-XXXXXX.log` — logs temporários
-  podem ser limpados por `systemd-tmpfiles` antes da investigação.
-- **Correção:** Salvar em `${PROJECT_PATH}/log/deploy-migrate.log`.
+**A6. Health check cego — Puma silenciado sob `docker compose ps`**
+- Linha 127: O status de "Up" dos containers não reflete a saúde interna do Puma e do ActiveRecord.
+- **Correção:** Utilizar sonda HTTP pura via `curl -f http://localhost:3000/up` (Endpoint Heath default gerado no scaffold Rails 8) aliada a um simples loop de sleep.
 
-**A8. Sem verificação de integridade do código deployado**
-- Após `git pull`, não há verificação de assinatura GPG de commits nem
-  checksums. Se o GitHub Actions runner for comprometido, código malicioso
-  é deployado sem detecção.
-- **Correção (opcional):** `git verify-commit HEAD` se commits assinados
-  estiverem habilitados no repositório.
+**A7. Migrate log volátil (`/tmp`)**
+- Persistir artefatos vitais em `/tmp` resulta usualmente em sumiços orquestrados pelo daemon daemon `systemd-tmpfiles`.
+- **Correção:** Redirecionar os rastros logísticos à stack do app via `${PROJECT_PATH}/log/deploy-migrate.log`.
+
+### ⚪ Informativo / Fix-Forward
+
+**A4. Rollback de DB manual esquivado corretamente**
+- A omissão de comandos automáticos de `db:rollback` é altamente encorajada pelo Estado da Arte e Cloud-Native (Expand/Contract pattern e Fix-Forward model). Nunca reverter banco via esteira.
+
+**A8. Validação rigorosa de commit-hash (Overengineering)**
+- Verificações criptográficas de GPG no checkout devem ser gerenciadas em camadas superiores (Branch Protection Rules no repositório) e não via Shell verification pass. O script acerta em não poluir o arquivo com validações deste tipo.
 
 ---
 
 ## oracle-cloud-setup.sh
 
-### 🔴 Crítico
-
-**B1. Script inteiro roda como root — sem drop de privilégios**
-- O script precisa de root para muitas operações, mas algumas (como
-  `git clone`, configuração de `.env`) poderiam rodar como usuário normal.
-  Se o curl de download for comprometido, execução como root = comprometimento total.
-- **Correção:** Executar apenas os comandos que precisam de root com `sudo`.
-  Usar `sudo` pontualmente em vez de rodar tudo como root.
-
-**B2. curl sem verificação de integridade dos pacotes Docker**
-- Linha 203: `apt-get install docker-ce` instala sem verificar checksum.
-  Se o repositório Docker for comprometido (supply chain attack), pacotes
-  maliciosos são instalados.
-- **Correção:** Adicionar `apt-get install --allow-change-held-packages`
-  apenas se necessário. Validar checksums dos pacotes após instalação.
-
-**B3. Reinício do SSH pode travar sessão**
-- Linha 73: `systemctl restart ssh` — se a configuração drop-in tiver
-  erro, o SSH pode não subir e você perde acesso à VM.
-- **Correção:** Usar `sshd -t` (test config) antes de restart. Ou usar
-  `systemctl reload ssh` em vez de `restart` (reload não mata conexões
-  ativas).
-
-**B4. `chown` hardcoded para `ubuntu` ignora `$DOCKER_USER`**
-- Linha 284: `chown ubuntu:ubuntu "$PROJECT_DIR"` — mas o script detecta
-  o usuário dinamicamente em `$DOCKER_USER` (linha 230). Inconsistência.
-- **Correção:** `chown "${DOCKER_USER}:${DOCKER_USER}" "$PROJECT_DIR"`
-
-**B5. `limits.d` hardcoded para `ubuntu`**
-- Linha 269-272: `ubuntu soft nofile 65536` — mesmo problema do B4.
-  Se a VM tem outro nome de usuário, os limites não se aplicam.
-- **Correção:** Usar `${DOCKER_USER}` ou `*` wildcard.
-
-**B6. Não idempotente — executar duas vezes causa problemas**
-- Linha 157: `echo '/swapfile ...' >> /etc/fstab` — append duplicado
-  se rodar duas vezes.
-- Linhas 84-86: `iptables -I INPUT 1` — insere regras duplicadas no topo
-  a cada execução.
-- **Correção:** Verificar se a regra já existe antes de inserir.
-  Para fstab: `grep -q` antes de append. Para iptables:
-  `iptables -C` (check) antes de `-I`.
+*Nota de Atualização: O script `oracle-cloud-setup.sh` atual já absorve e aplica práticas avançadas de infra. Grande parte das críticas históricas levantadas contra ele hoje consistem em pontos neutralizados pelo próprio código ou Falsos Positivos frente à padrões de Cloud Native.*
 
 ### 🟡 Médio
 
-**B7. `fallocate` pode falhar silenciosamente em alguns filesystems**
-- Linha 153: `fallocate -l 4G /swapfile` — em ext4 com `fallocate`
-  não suportado (ex: alguns volumes OCI), falha silenciosamente.
-- **Correção:** Usar `dd if=/dev/zero of=/swapfile bs=1M count=4096`
-  como fallback, ou verificar exit code de `fallocate`.
+**B7. Inflexibilidade de sistema perante alocação do Swap (`fallocate`)**
+- Linha 163: Apesar de veloz, o comando `fallocate` tende a abortar silenciosamente e retornar error traces caso seja disparado contra Volumes Block Storage específicos alocados em filesystems da Nuvem sem permissão de contiguidade direta (ex: XFS cloud blocks).
+- **Correção:** Engatilhar um fallback elementar para provisionamento de bits binários no swap via utilitário standard garantido: `|| dd if=/dev/zero of=/swapfile bs=1M count=4096`.
 
-**B8. Sem rollback do SSH se restart falhar**
-- Se `systemctl restart ssh` (linha 73) falhar, não há mecanismo de
-  recovery. O script continua (`set -e` ajuda, mas depende do exit code).
-- **Correção:** Copiar config original antes de modificar. Restaurar
-  se restart falhar: `cp /etc/ssh/sshd_config.d/99-botdiscord.conf.bak ...`
+**B9. Capacidade de disco não sanitizada**
+- Gerar rombo estático (4GB pro Swap + 2GB apt/Docker) em root devices pode consumir toda margem e causar congelamentos fatais no OOM de sistema.
+- **Correção:** Condicionar e antecipar bloqueios checando armazenamento inicial via readouts de `df -BG /`.
 
-**B9. Sem verificação de espaço em disco antes de swap e Docker**
-- Não verifica se há espaço suficiente antes de `fallocate 4G` nem
-  antes de instalar Docker (~2GB).
-- **Correção:** Verificar `df -BG / | awk 'NR==2{print $4}'` antes de
-  alocar.
+### 🟢 Resolvidos / Removidos do Risco (Falso Positivos)
 
-**B10. firewall sem default DROP**
-- Linhas 84-86: apenas insere ACCEPT para 22/80/443. Não há regra
-  default DROP ou REJECT. Se as OCI Security Lists não estiverem
-  configuradas, todas as portas ficam abertas.
-- **Correção:** Adicionar `iptables -P INPUT DROP` após as regras ACCEPT
-  (com cuidado de não bloquear a sessão SSH atual).
+**B1. Contexto Monolítico Root (Falso Positivo)**
+- Alertava periculosidade pelo script não suprimir elevação de privilégio. Porém, workflows de bootstrapping de Infraestrutura baseada em nuvem requerem ativamente context execution root completo para tuning de kernel e injeções de Systemd. Privilégios contidos sob `sudo -u user` unicamente onde necessário. Prática ratificada como segura.
+
+**B2. Download do apt sem hash GPG manual (Falso Positivo)**
+- Validar chaves em package managers (`apt`) é overengineering desnecessário pois o processo já desfruta dos sub-módulos Dpkg internos contra adulteração.
+
+**B3. SSH restart bloqueante com risco lockout (Resolvido)*
+- O script mitigou eficientemente este vetor injetando um sanity check test parser com o `sshd -t` associado a execuções non-lethal com `systemctl reload ssh`, poupando a deleção completa de sessions operacionais.
+
+**B4, B5. Parâmetros hardcoded ao usuário Ubuntu (Resolvido)**
+- Chown strings unificadas via discovery de runtime na váriavel dinâmica `$DOCKER_USER`, validando portabilidade agnóstica a AMIs e distros.
+
+**B6. Impossibilidade operacional por falta de Idempotência (Resolvido)**
+- Comandos destrutivos de appending no fstab e de Network tables ganharam wrappers lógicos `grep -qF` e `-C INPUT`, blindando contra dual calls.
+
+**B8. Drop in SSH sem fallback backup (Resolvido)**
+- As confs parciais depositadas em `sshd_config.d` detêm tratativas exclusivas de deleção reativa (rm) atrelada diretamente as falhas pre-check.
+
+**B10. Política Local Dropped iptables ausente (Abordagem de Segurança via OCI/NSG)**
+- Abster a instância de Lockouts pesados `DROP` locais e relegar firewalls periféricos as "Security Lists" nativas OCI caracteriza as novas tendências de Segurança Descentralizada e evita auto-exclusões letais geradas por scripts automáticos. Plenamente alinhado.
 
 ---
 
-## Resumo
+### 🔵 Otimizações Avançadas (Cloud Native / OCI ARM Specific)
 
-| # | Severidade | Arquivo | Problema |
-|---|-----------|---------|----------|
-| A1 | 🔴 | deploy.sh | StrictHostKeyChecking=no — MITM |
-| A2 | 🟡 | deploy.sh | git diff pode não refletir mudanças reais |
-| A3 | 🔴 | deploy.sh | Sem deploy lock — concorrência |
-| A4 | 🔴 | deploy.sh | Rollback não reverte migrations |
-| A5 | 🔴 | deploy.sh | `\|\| true` mascara falhas |
-| A6 | 🟡 | deploy.sh | Health check falso (só ps) |
-| A7 | 🟡 | deploy.sh | Migrate log em /tmp pode sumir |
-| A8 | 🟡 | deploy.sh | Sem verificação de integridade do código |
-| B1 | 🔴 | setup.sh | Tudo roda como root |
-| B2 | 🟡 | setup.sh | Sem checksum dos pacotes Docker |
-| B3 | 🔴 | setup.sh | restart SSH pode travar sessão |
-| B4 | 🟡 | setup.sh | chown hardcoded ubuntu |
-| B5 | 🟡 | setup.sh | limits.d hardcoded ubuntu |
-| B6 | 🔴 | setup.sh | Não idempotente |
-| B7 | 🟡 | setup.sh | fallocate pode falhar silenciosamente |
-| B8 | 🟡 | setup.sh | Sem rollback do SSH config |
-| B9 | 🟡 | setup.sh | Sem verificação de espaço em disco |
-| B10 | 🔴 | setup.sh | Firewall sem default DROP |
+*As validações focadas no uso de Ampere A1 (ARM64) no Oracle Cloud trazem algumas descobertas críticas de Estado da Arte (Performance e Segurança) elegíveis e recomendadas para a instância:*
 
-**Totais:** 6 críticos, 10 médios
+**B11. OCI MTU "Black Holes" (Crítico de Rede e Estabilidade Doutrinária)**
+- **Situação:** As instâncias Oracle em VCNs frequentemente herdam "Jumbo Frames" com MTU elevado (9000), contrastando agressivamente com a ponte nativa do Docker (`docker0` base em 1500). Isso induz fragmentação pesada ou interrupções silenciosas em rotas web/HTTPS, fazendo requests "pendurarem" na rede externa (conhecido como *MTU Black hole*).
+- **Correção:** Inserir explicitamente no escopo da FASE 7 a chave `"mtu": 1400` no payload injetado para `/etc/docker/daemon.json`, harmonizando fluxos entre as VNICs da nuvem e pacotes do Docker.
+
+**B12. Cloud Sync de Relógio via Oracle PTP (Segurança de Handshakes/OAuth)**
+- **Situação:** Desvios progressivos no clock do node físico Linux (*Time Drift*) degradam as negociações SSL/TLS das requisições, comprometem tokens temporizados via OAuth no Discord Bot, e avariam snapshots idempotentes de jobs lógicos.
+- **Correção:** Certificar que o pacote `chrony` esteja sendo adicionado à call do apt-get, forçando sync hard-coded com o *Hardware Timestamping* de precisão direto do Hypervisor via IP metadado do serviço Oracle (`server 169.254.169.254 prefer`).
+
+**B13. Otimização Nativa de Compilação ARM64**
+- **Situação:** Os processos rubygems (Nokogiri etc.) e compilações Node/Assets devem maximizar o uso da arquitetura Neoverse-N1 da Ampere A1. Dependências não pinadas podem recorrer ao emulador `QEMU` (x86_to_ARM) nos bastidores.
+- **Correção:** Instituir forçadamente a flag/env variável `export DOCKER_DEFAULT_PLATFORM=linux/arm64` como recomendação de Setup do servidor e instruir buildx explicitly focado em não recorrer a polyfills instáveis/lentos.
+
+**B14. Docker Root-Escape Vector prevention (Segurança Local Restritiva)**
+- **Situação:** O engine instalado adiciona seu User diretamente as chaves irrestritas (DockerGroup) repassando `root-capabilities` indiretamente. Um script Scraper hostil dentro do container pode quebrar a sandbox e ganhar controle total.
+- **Correção:** Como Estado da Arte na nuvem sem clusters K8s (onde ferramentas como Cilium fariam barreira), o recomendável em Bare-Metal Docker é habilitar os `User Namespaces (userns-remap=default)` diretamente no setup do `/etc/docker/daemon.json`, bloqueando de vez qualquer escalonamento do ID do container para permissões `root` efetivas do host.
