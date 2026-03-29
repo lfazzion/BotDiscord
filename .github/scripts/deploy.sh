@@ -57,11 +57,6 @@ set -euo pipefail
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
 MIGRATE_LOG=$(mktemp /tmp/deploy-migrate-XXXXXX.log)
 LOCAL=""
-PREVIOUS_IMAGE_IDS=""
-
-snapshot_images() {
-  PREVIOUS_IMAGE_IDS=$(${DOCKER_COMPOSE} images -q 2>/dev/null | sort | uniq | tr '\n' ',' | sed 's/,$//')
-}
 
 rollback() {
   if [[ -z "${LOCAL}" ]]; then
@@ -71,15 +66,8 @@ rollback() {
   fi
   echo "[deploy] ERROR: Deploy failed — rolling back to ${LOCAL:0:7}..."
   git reset --hard "${LOCAL}" 2>/dev/null || true
-
-  if [[ -n "${PREVIOUS_IMAGE_IDS}" ]]; then
-    echo "[deploy] Restoring previous container images..."
-    OLD_IDS=$(echo "${PREVIOUS_IMAGE_IDS}" | tr ',' '\n')
-    for OLD_ID in ${OLD_IDS}; do
-      docker image tag "${OLD_ID}" "${OLD_ID}-rollback" 2>/dev/null || true
-    done
-  fi
-
+  echo "[deploy] Rebuilding previous version..."
+  ${DOCKER_COMPOSE} build 2>/dev/null || true
   ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot 2>/dev/null || true
   echo "[deploy] Rollback attempted. Manual intervention may be required."
 }
@@ -100,8 +88,6 @@ fi
 echo "[deploy] Updating: ${LOCAL:0:7} → ${REMOTE:0:7}"
 git checkout "${DEPLOY_BRANCH}"
 git pull origin "${DEPLOY_BRANCH}"
-
-snapshot_images
 
 # Rebuild and restart only if Dockerfile or Gemfile changed
 CHANGED=$(git diff --name-only "${LOCAL}" "${REMOTE}")
@@ -124,15 +110,17 @@ fi
 
 echo "[deploy] Running migrations..."
 if ! ${DOCKER_COMPOSE} run --rm --entrypoint bin/rails app db:migrate >"${MIGRATE_LOG}" 2>&1; then
-  echo "[deploy] WARNING: Migration failed — see ${MIGRATE_LOG} for details"
+  echo "[deploy] ERROR: Migration failed — see ${MIGRATE_LOG} for details"
   cat "${MIGRATE_LOG}"
+  rollback
+  exit 1
 fi
 
 echo "[deploy] Restarting services..."
 ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
 
 echo "[deploy] Cleaning up old images..."
-docker image prune -f
+docker image prune -f --filter "until=24h"
 
 echo "[deploy] Checking service health..."
 sleep 5
