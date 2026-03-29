@@ -125,13 +125,13 @@ sudo -u ubuntu cp .env.example .env
 
 | # | Status | Descrição |
 |---|--------|-----------|
-| 1 | [ ] Corrigir lógica de rollback para restaurar imagens anteriores |
-| 2 | [ ] Mover snapshot_images para ANTES do git pull |
-| 3 | [ ] Fazer deploy PARAR quando migration falha |
-| 4 | [ ] Verificar existência do usuário antes de usermod |
-| 5 | [ ] Adicionar verificação de fingerprint GPG |
-| 6 | [ ] Usar filtro seguro no docker image prune |
-| 7 | [ ] Corrigir guia para usar .env correto |
+| 1 | [x] Corrigir lógica de rollback para restaurar imagens anteriores |
+| 2 | [x] Mover snapshot_images para ANTES do git pull |
+| 3 | [x] Fazer deploy PARAR quando migration falha |
+| 4 | [x] Verificar existência do usuário antes de usermod |
+| 5 | [x] Adicionar verificação de fingerprint GPG |
+| 6 | [x] Usar filtro seguro no docker image prune |
+| 7 | [x] Corrigir guia para usar .env correto |
 
 ---
 

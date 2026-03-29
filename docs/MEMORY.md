@@ -137,6 +137,7 @@ rg "<palavra-chave do problema>" docs/memory/
 | Data | Ação | Seção Afetada |
 |------|------|---------------|
 | 2026-03-28 | Correções deploy.sh: rollback com git reset --hard (em vez de git checkout), snapshot de Docker image IDs pré-deploy para possibility de rollback completo de containers. | Contexto Ativo |
+| 2026-03-28 | Correções review PR #10: oracle-cloud-setup.sh — propagar $DOCKER_USER para limits.d (Phase 8) e chown (Phase 9), sshd -t antes de restart SSH, iptables idempotente com -C check, fstab append com grep -qF. ERROS.md checklist atualizada. | Contexto Ativo, Lições Aprendidas |
 | 2026-03-28 | Infraestrutura Oracle Cloud + Deploy CI/CD: workflow GitHub Actions, deploy script SSH, setup script VM (9 fases), docs Free Tier + setup guide. Decisão: Oracle Always Free como hospedagem. | Contexto Ativo |
 | 2026-03-26 | Fase 6 implementada: health check, scraping alerts, image gen, SQLite backup. Padrões ratificados: ruby_llm 1.14, sem OpenStruct em Ruby 4.0, safe navigation para $CHILD_STATUS, mocks para DB em integration tests. Lições: to_s(:db) não funciona em Ruby 4.0, stubs Mocha vazam em connection pool. | Contexto Ativo, Padrões Ratificados, Lições Aprendidas |
 | 2026-03-23 | Fase 5 implementada: Discord Bot + 16 tools + digest jobs. Padrões ratificados: discordrb 3.7, requires explícitos em tests, partials com prefixo `_`. | Contexto Ativo, Padrões Ratificados |
