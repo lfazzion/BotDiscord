@@ -31,15 +31,15 @@ Nova feature, refatoração significativa, integração nova, bug complexo.
 
 ```xml
 <task>
-Você precisa implementar [DESCRIÇÃO DA TAREFA].
-Faça uma investigação completa antes de propor qualquer código.
+Você precisa implementar essas mudanças.
+Primeiramente faça uma investigação completa antes de propor qualquer código.
 </task>
 
 <instructions>
 1. Leia TODOS os arquivos relevantes do codebase profundamente — não superficialmente.
 2. Consulte a Routing Table do AGENTS.md para saber quais CONTEXT.md ler.
 3. Encontre padrões de implementação similares já existentes no projeto.
-4. Busque na internet as documentações mais recentes sobre as tecnologias envolvidas juntamente com exemplos de código em sites como GitHub, Stack Overflow, etc.
+4. Pesquise na internet as documentações mais recentes e melhores práticas juntamente com exemplos de código em sites como GitHub, Stack Overflow, etc.
 5. Identifique constraints do projeto (Docker, SQLite WAL, Solid Queue, etc.).
 6. Faça chamadas paralelas de ferramentas sempre que as leituras forem independentes.
 </instructions>
@@ -75,7 +75,7 @@ Escreva o resultado em `PRD.md` seguindo EXATAMENTE esta estrutura:
 <constraints>
 - Não escreva NENHUM código nesta etapa — apenas análise e documentação.
 - Não especule sobre código que não abriu. LEIA os arquivos antes de fazer afirmações.
-- Seja exaustivo na leitura — "deeply", não superficialmente.
+- Seja EXAUSTIVO na leitura, não tente ler apenas superficialmente.
 - Inclua path + line number em toda referência a código existente.
 </constraints>
 ```
