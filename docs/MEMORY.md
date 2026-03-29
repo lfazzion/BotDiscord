@@ -10,6 +10,14 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **[2026-03-28]** Correções críticas de infra (PR #9: `fix/deploy-infrastructure`).
+  - Deploy rollback simplificado: `git reset --hard` + `docker compose build` (remove snapshot_images() quebrado)
+  - Migration falha agora chama rollback e para deploy (era WARNING que continuava)
+  - Docker GPG key fingerprint verification no setup (proteção MITM)
+  - Detecção dinâmica de SUDO_USER em vez de hardcoded "ubuntu"
+  - `.env.example` com variáveis de ambiente documentadas
+  - Auditoria de segurança: 16 findings em docs/audit_deploy_setup.md
+  - 407 testes passando (0 failures, 0 errors)
 - **[2026-03-28]** Infraestrutura Oracle Cloud + Deploy CI/CD.
   - Deploy automatizado via GitHub Actions (`.github/workflows/deploy.yml` + `.github/scripts/deploy.sh`)
   - SSH deploy com detecção de mudanças Docker/Gemfile para rebuild inteligente
@@ -75,6 +83,8 @@
 | 2026-03-26 | `TimeWithZone#to_s(:db)` raises `ArgumentError: wrong number of arguments` em Ruby 4.0 | `to_s` não aceita argumentos de formato em Ruby 4.0 | Usar `strftime("%Y-%m-%d %H:%M:%S")` |
 | 2026-03-26 | Stubs Mocha em `ActiveRecord::Base.connection` vazam entre integration tests | Connection pool reutiliza o mesmo objeto connection entre tests | Usar mock objects (`mock('connection')`) em vez de stubs diretos + `Mocha::Mockery.instance.teardown` no teardown |
 | 2026-03-26 | `require_relative` errado em test de concern (`test/jobs/concerns/`) | Arquivo em subdiretório requer `../../../` em vez de `../../` para sair do concern | Verificar path relativo considerando profundidade do diretório |
+| 2026-03-28 | Deploy rollback com snapshot_images() era ineficaz | Snapshot tirado DEPOIS do `git pull` capturava imagens do novo código quebrado, não do código anterior funcional. Rollback marcava imagens atuais com `-rollback` em vez de restaurar as anteriores | Simplificar: `git reset --hard` + `docker compose build` para rebuild do código anterior |
+| 2026-03-28 | Migration falha não parava deploy | deploy.sh usava `WARNING` + `cat` sem `exit 1`, continuava deploy com banco incompatível | Adicionar `rollback` + `exit 1` no bloco de falha de migration |
 
 <!-- Template para novas entradas:
 | YYYY-MM-DD | Descrição concisa do bug | O que causou | Como foi resolvido (`arquivo.rb`, classe, método) |

@@ -6,9 +6,9 @@ nenhuma. Em caso de dúvida, pergunte — nunca assuma.
 
 ---
 
-## PRÉ-REQUISITOS (preencha antes de submeter)
+## PRÉ-REQUISITOS (Analise as mudanças e preencha antes de submeter)
 
-- [ ] `[BRANCH_BASE]` → branch base real (ex: `main` ou `develop`)
+- [ ] `[BRANCH_BASE]` → branch base real (ex: `main`, `develop`, etc)
 - [ ] `[NOME_DA_FASE]` → nome descritivo da fase implementada
 - [ ] `[TIPO]` → tipo Conventional Commit (`feat` | `fix` | `refactor` | `chore` | `perf` | `docs`)
 - [ ] `[NOME_DO_BRANCH]` → nome completo do branch (ex: `feat/add-instagram-scraper`)
