@@ -70,8 +70,15 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 SSH_EOF
 
-systemctl restart ssh
-ok "SSH hardening aplicado via arquivo drop-in"
+# Validar config antes de restart — erro de sintaxe = lockout SSH
+if ! sshd -t; then
+  err "SSH config inválida — revertendo drop-in"
+  rm -f /etc/ssh/sshd_config.d/99-botdiscord-hardening.conf
+  exit 1
+fi
+
+systemctl reload ssh
+ok "SSH hardening aplicado via arquivo drop-in (reload, não restart)"
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 3: Segurança — Firewall iptables (OCI Seguro)
@@ -81,9 +88,12 @@ log "FASE 3: Configurando regras seguras iptables..."
 
 # Em OCI não podemos zerar iptables, senão mata a máquina com lockout de boot volume.
 # Inserimos as permissões no topo da cadeia INPUT de forma não-destrutiva.
-iptables -I INPUT 1 -p tcp --dport 22 -j ACCEPT -m comment --comment "SSH" || true
-iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT -m comment --comment "HTTP" || true
-iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT -m comment --comment "HTTPS" || true
+# Idempotente: -C (check) falha se a regra não existe, então -I insere.
+for PORT in 22 80 443; do
+  COMMENT=$(case $PORT in 22) echo "SSH";; 80) echo "HTTP";; 443) echo "HTTPS";; esac)
+  iptables -C INPUT -p tcp --dport "${PORT}" -j ACCEPT -m comment --comment "${COMMENT}" 2>/dev/null \
+    || iptables -I INPUT 1 -p tcp --dport "${PORT}" -j ACCEPT -m comment --comment "${COMMENT}"
+done
 
 # Salvar as regras inseridas para sobrevivência após reboot
 netfilter-persistent save >/dev/null 2>&1
@@ -154,10 +164,14 @@ if ! swapon --show | grep -q '/swapfile'; then
   chmod 600 /swapfile
   mkswap /swapfile
   swapon /swapfile
-  echo '/swapfile none swap sw 0 0' >> /etc/fstab
   ok "Swap 4GB criado"
 else
   ok "Swap já existe, pulando"
+fi
+
+# Idempotente: só adiciona ao fstab se não existir
+if ! grep -qF '/swapfile' /etc/fstab; then
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
 # Ajustar swappiness (baixo — preferir RAM)
@@ -179,7 +193,20 @@ apt-get remove -y -qq docker docker-engine docker.io containerd runc 2>/dev/null
 
 # Adicionar repositório oficial Docker
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+DOCKER_GPG_TMP=$(mktemp)
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o "$DOCKER_GPG_TMP"
+DOCKER_FP=$(gpg --with-colons --import-options show-only --import "$DOCKER_GPG_TMP" 2>/dev/null \
+  | awk -F: '/^fpr:/{print $10; exit}')
+EXPECTED_DOCKER_FP="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+if [[ "$DOCKER_FP" != "$EXPECTED_DOCKER_FP" ]]; then
+  rm -f "$DOCKER_GPG_TMP"
+  err "Docker GPG key fingerprint mismatch!"
+  err "Got:      ${DOCKER_FP:-<empty>}"
+  err "Expected: ${EXPECTED_DOCKER_FP}"
+  exit 1
+fi
+gpg --dearmor -o /etc/apt/keyrings/docker.gpg < "$DOCKER_GPG_TMP"
+rm -f "$DOCKER_GPG_TMP"
 chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
@@ -213,9 +240,14 @@ systemctl restart docker
 systemctl enable docker
 ok "Docker daemon configurado (live-restore, logs limitados, metrics)"
 
-# Adicionar usuário ubuntu ao grupo docker
-usermod -aG docker ubuntu
-ok "Usuário ubuntu adicionado ao grupo docker"
+# Adicionar usuário ao grupo docker
+DOCKER_USER="${SUDO_USER:-$(logname 2>/dev/null || echo ubuntu)}"
+if id "${DOCKER_USER}" &>/dev/null; then
+  usermod -aG docker "${DOCKER_USER}"
+  ok "Usuário ${DOCKER_USER} adicionado ao grupo docker"
+else
+  err "Usuário ${DOCKER_USER} não existe — adicione manualmente: usermod -aG docker <usuario>"
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 8: Otimizações de kernel
@@ -246,14 +278,14 @@ EOF
 sysctl -p /etc/sysctl.d/99-botdiscord.conf
 ok "Kernel tunado (network, file descriptors, OOM)"
 
-# Aumentar limites de arquivo para o usuário ubuntu
-cat > /etc/security/limits.d/99-botdiscord.conf <<'EOF'
-ubuntu soft nofile 65536
-ubuntu hard nofile 65536
-ubuntu soft nproc 16384
-ubuntu hard nproc 16384
+# Aumentar limites de arquivo para o usuário detectado
+cat > /etc/security/limits.d/99-botdiscord.conf <<EOF
+${DOCKER_USER} soft nofile 65536
+${DOCKER_USER} hard nofile 65536
+${DOCKER_USER} soft nproc 16384
+${DOCKER_USER} hard nproc 16384
 EOF
-ok "Limites de arquivo aumentados (65536)"
+ok "Limites de arquivo aumentados para ${DOCKER_USER} (65536)"
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 9: Deploy do BotDiscord
@@ -263,10 +295,10 @@ log "FASE 9: Preparando diretório do projeto..."
 
 PROJECT_DIR="/opt/botdiscord"
 mkdir -p "$PROJECT_DIR"
-chown ubuntu:ubuntu "$PROJECT_DIR"
+chown "${DOCKER_USER}:${DOCKER_USER}" "$PROJECT_DIR"
 ok "Diretório $PROJECT_DIR criado"
 
-cat <<'DEPLOY_MSG'
+cat <<DEPLOY_MSG
 
 ═══════════════════════════════════════════════════════════════
   PRÓXIMOS PASSOS — Como deployar o BotDiscord:
@@ -274,12 +306,12 @@ cat <<'DEPLOY_MSG'
 
   1. Clonar o repositório:
 
-     sudo -u ubuntu git clone <SEU_REPO_URL> /opt/botdiscord
+     sudo -u ${DOCKER_USER} git clone <SEU_REPO_URL> /opt/botdiscord
 
   2. Configurar variáveis de ambiente:
 
-     sudo -u ubuntu cp /opt/botdiscord/.env.example /opt/botdiscord/.env
-     sudo -u ubuntu nano /opt/botdiscord/.env
+     sudo -u ${DOCKER_USER} cp /opt/botdiscord/.env.example /opt/botdiscord/.env
+     sudo -u ${DOCKER_USER} nano /opt/botdiscord/.env
 
   3. Subir os containers:
 
