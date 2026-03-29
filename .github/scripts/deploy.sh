@@ -25,7 +25,7 @@ done
 SSH_USER="${SSH_USER:-ubuntu}"
 PROJECT_PATH="${PROJECT_PATH:-/opt/botdiscord}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
-SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=15"
+SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15"
 
 # ─── Setup SSH key ──────────────────────────────────────────────────
 log "Configuring SSH key..."
@@ -55,21 +55,30 @@ remote "PROJECT_PATH='${PROJECT_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s"
 set -euo pipefail
 
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
-MIGRATE_LOG=$(mktemp /tmp/deploy-migrate-XXXXXX.log)
+MIGRATE_LOG="${PROJECT_PATH}/log/deploy-migrate.log"
 LOCAL=""
+_ROLLBACK_IN_PROGRESS=""
 
 rollback() {
+  if [[ -n "${_ROLLBACK_IN_PROGRESS}" ]]; then
+    echo "[deploy] ERROR: Rollback already in progress — aborting to prevent loop"
+    exit 1
+  fi
+  _ROLLBACK_IN_PROGRESS="1"
+
   if [[ -z "${LOCAL}" ]]; then
     echo "[deploy] ERROR: Deploy failed before snapshot — cannot rollback automatically"
     echo "[deploy] Manual intervention required."
-    return 1
+    exit 1
   fi
+
   echo "[deploy] ERROR: Deploy failed — rolling back to ${LOCAL:0:7}..."
-  git reset --hard "${LOCAL}" 2>/dev/null || true
+  git reset --hard "${LOCAL}"
   echo "[deploy] Rebuilding previous version..."
-  ${DOCKER_COMPOSE} build 2>/dev/null || true
-  ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot 2>/dev/null || true
-  echo "[deploy] Rollback attempted. Manual intervention may be required."
+  ${DOCKER_COMPOSE} build
+  ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
+  echo "[deploy] Rollback completed. Manual verification recommended."
+  exit 1
 }
 trap rollback ERR
 
@@ -90,7 +99,7 @@ git checkout "${DEPLOY_BRANCH}"
 git pull origin "${DEPLOY_BRANCH}"
 
 # Rebuild and restart only if Dockerfile or Gemfile changed
-CHANGED=$(git diff --name-only "${LOCAL}" "${REMOTE}")
+CHANGED=$(git diff --name-only ORIG_HEAD HEAD)
 NEEDS_REBUILD=false
 
 for pattern in Dockerfile Dockerfile.python Gemfile Gemfile.lock docker/; do
@@ -122,9 +131,22 @@ ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
 echo "[deploy] Cleaning up old images..."
 docker image prune -f --filter "until=24h"
 
-echo "[deploy] Checking service health..."
-sleep 5
-${DOCKER_COMPOSE} ps
+echo "[deploy] Checking service health (HTTP)..."
+HEALTH_OK=false
+for i in 1 2 3 4 5 6; do
+  sleep 5
+  if ${DOCKER_COMPOSE} exec -T app curl -sf http://localhost:3000/up >/dev/null 2>&1; then
+    HEALTH_OK=true
+    break
+  fi
+  echo "[deploy] Health check attempt ${i}/6 failed, retrying..."
+done
+if [[ "${HEALTH_OK}" != "true" ]]; then
+  echo "[deploy] ERROR: Health check failed after 30s"
+  ${DOCKER_COMPOSE} ps
+  exit 1
+fi
+echo "[deploy] Health check passed."
 
 echo "[deploy] Deploy complete: ${REMOTE:0:7}"
 DEPLOY_SCRIPT

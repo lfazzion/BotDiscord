@@ -154,13 +154,53 @@ systemctl enable unattended-upgrades
 ok "Atualizações automáticas de segurança habilitadas"
 
 # ═══════════════════════════════════════════════════════════════════
-# FASE 6: Swap (4GB para 24GB RAM — ratio conservador)
+# FASE 6: NTP — Chrony com OCI PTP
 # ═══════════════════════════════════════════════════════════════════
 
-log "FASE 6: Configurando swap..."
+log "FASE 6: Configurando NTP (chrony)..."
+
+# Desabilitar systemd-timesyncd se ativo (conflito com chrony)
+if systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
+  systemctl stop systemd-timesyncd
+  systemctl disable systemd-timesyncd
+fi
+
+apt-get install -y -qq chrony
+
+# OCI NTP service (Stratum 1/2 interno do hypervisor)
+cat > /etc/chrony/conf.d/oci-ntp.conf <<'EOF'
+server 169.254.169.254 prefer iburst
+makestep 1.0 3
+rtconutc
+EOF
+
+systemctl restart chrony
+systemctl enable chrony
+
+# Verificar sincronização
+sleep 2
+if chronyc tracking -n 2>/dev/null | grep -q "Leap status.*Normal"; then
+  ok "Chrony configurado com OCI NTP (169.254.169.254)"
+else
+  log "AVISO: Chrony instalado — sincronização pendente (normal nos primeiros segundos)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# FASE 7: Swap (4GB para 24GB RAM — ratio conservador)
+# ═══════════════════════════════════════════════════════════════════
+
+log "FASE 7: Configurando swap..."
+
+# Verificar espaço em disco (6GB mínimo: 4G swap + ~2G pacotes)
+AVAILABLE_GB=$(df -BG / | awk 'NR==2 {gsub("G",""); print $4}')
+if [[ "${AVAILABLE_GB}" -lt 8 ]]; then
+  err "Espaço insuficiente: ${AVAILABLE_GB}GB disponível, mínimo 8GB necessário"
+  exit 1
+fi
+ok "Espaço em disco: ${AVAILABLE_GB}GB disponível"
 
 if ! swapon --show | grep -q '/swapfile'; then
-  fallocate -l 4G /swapfile
+  fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
   chmod 600 /swapfile
   mkswap /swapfile
   swapon /swapfile
@@ -183,10 +223,10 @@ sysctl -p /etc/sysctl.d/99-swap.conf
 ok "Swappiness ajustado para 10"
 
 # ═══════════════════════════════════════════════════════════════════
-# FASE 7: Docker + Docker Compose
+# FASE 8: Docker + Docker Compose
 # ═══════════════════════════════════════════════════════════════════
 
-log "FASE 7: Instalando Docker..."
+log "FASE 8: Instalando Docker..."
 
 # Remover versões antigas (se houver)
 apt-get remove -y -qq docker docker-engine docker.io containerd runc 2>/dev/null || true
@@ -221,6 +261,7 @@ ok "Docker instalado"
 mkdir -p /etc/docker
 cat > /etc/docker/daemon.json <<'EOF'
 {
+  "mtu": 1400,
   "storage-driver": "overlay2",
   "log-driver": "json-file",
   "log-opts": {
@@ -249,11 +290,18 @@ else
   err "Usuário ${DOCKER_USER} não existe — adicione manualmente: usermod -aG docker <usuario>"
 fi
 
+# Plataforma Docker padrão ARM64 (evita QEMU x86→ARM em builds)
+DOCKER_PROFILE="/home/${DOCKER_USER}/.profile"
+if [[ -f "${DOCKER_PROFILE}" ]] && ! grep -q 'DOCKER_DEFAULT_PLATFORM' "${DOCKER_PROFILE}"; then
+  echo 'export DOCKER_DEFAULT_PLATFORM=linux/arm64' >> "${DOCKER_PROFILE}"
+  ok "DOCKER_DEFAULT_PLATFORM=linux/arm64 adicionado ao ~/.profile"
+fi
+
 # ═══════════════════════════════════════════════════════════════════
-# FASE 8: Otimizações de kernel
+# FASE 9: Otimizações de kernel
 # ═══════════════════════════════════════════════════════════════════
 
-log "FASE 8: Otimizações de kernel..."
+log "FASE 9: Otimizações de kernel..."
 
 cat > /etc/sysctl.d/99-botdiscord.conf <<'EOF'
 # Network performance
@@ -288,10 +336,10 @@ EOF
 ok "Limites de arquivo aumentados para ${DOCKER_USER} (65536)"
 
 # ═══════════════════════════════════════════════════════════════════
-# FASE 9: Deploy do BotDiscord
+# FASE 10: Deploy do BotDiscord
 # ═══════════════════════════════════════════════════════════════════
 
-log "FASE 9: Preparando diretório do projeto..."
+log "FASE 10: Preparando diretório do projeto..."
 
 PROJECT_DIR="/opt/botdiscord"
 mkdir -p "$PROJECT_DIR"
@@ -332,8 +380,25 @@ cat <<DEPLOY_MSG
   ✔ Fail2Ban: ban de 24h após 3 falhas SSH
   ✔ Atualizações automáticas de segurança
   ✔ Swap 4GB com swappiness=10
-  ✔ Docker: live-restore, logs rotativos, metrics
+  ✔ Docker: live-restore, logs rotativos, MTU 1400, metrics
+  ✔ Docker platform: linux/arm64 (sem QEMU)
+  ✔ NTP: Chrony com OCI PTP (169.254.169.254)
   ✔ Kernel: network tuning, file descriptors 65536
+
+═══════════════════════════════════════════════════════════════
+  HARDENING OPCIONAL (não aplicado automaticamente):
+═══════════════════════════════════════════════════════════════
+
+  ⚠ Docker userns-remap: protege contra container→host escape,
+    mas QUEBRA bind mounts (storage/). Para aplicar:
+
+    1. Pare todos os containers
+    2. Adicione "userns-remap": "default" ao daemon.json
+    3. REFAÇA o chown: chown -R 100000:100000 /opt/botdiscord/storage
+    4. Reinicie Docker: systemctl restart docker
+    5. Reconstrua: docker compose -f docker/docker-compose.yml build --no-cache
+
+═══════════════════════════════════════════════════════════════
 
 ═══════════════════════════════════════════════════════════════
 
