@@ -10,6 +10,16 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **[2026-03-30]** Deploy hardening (Propostas 1-3: `chore/deploy-hardening`).
+  - `set -Eeuo pipefail` em deploy.sh e recover-failure.sh (ERR trap propaga para rollback)
+  - Healthcheck nativo docker-compose: `curl /up` (app) + `curl /json/version` (chrome)
+  - `depends_on` app→chrome mudou de `service_started` para `service_healthy` (determinístico)
+  - Image tagging: `botdiscord:${IMAGE_TAG:-latest}` em app/jobs/discord-bot; `IMAGE_TAG` = 12 chars do commit hash
+  - Deploy usa `--wait --wait-timeout 90` em vez de loop manual de health check (12 linhas → 1 flag)
+  - Rollback restaura imagem tagged anterior (sem rebuild) — `IMAGE_TAG="${LOCAL:0:12}" compose up`
+  - Builder cache prune (`docker builder prune -f --filter "until=24h"`) no deploy
+  - FASE 10.5 em oracle-cloud-setup.sh: systemd timer semanal de cleanup de imagens (`prune -a --filter until=168h`)
+  - Self-hosted runner (Proposta 4) adiado para PR separado após ≥1 semana em produção
 - **[2026-03-28]** Correções críticas de infra (PR #9: `fix/deploy-infrastructure`).
   - Deploy rollback simplificado: `git reset --hard` + `docker compose build` (remove snapshot_images() quebrado)
   - Migration falha agora chama rollback e para deploy (era WARNING que continuava)
@@ -150,3 +160,4 @@ rg "<palavra-chave do problema>" docs/memory/
 | 2026-03-22 | Adicionadas Definition of Done e Escalation Rules ao AGENTS.md | AGENTS.md |
 | 2026-03-22 | Criado Cold Tier protocol em MEMORY.md + estrutura `docs/memory/` | Cold Tier Protocol |
 | 2026-03-29 | Correções pós-audit: deploy.sh (A1-A7) + oracle-cloud-setup.sh (B7,B9,B11-B14) | Contexto Ativo |
+| 2026-03-30 | Deploy hardening (Propostas 1-3): set -Eeuo pipefail, healthcheck nativo docker-compose, image tagging com IMAGE_TAG, --wait em vez de health check loop, rollback sem rebuild, FASE 10.5 systemd timer cleanup. | Contexto Ativo |

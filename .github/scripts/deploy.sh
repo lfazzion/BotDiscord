@@ -10,7 +10,7 @@
 #   SSH_USER        — SSH username (default: ubuntu)
 #   PROJECT_PATH    — project directory on VM (default: /opt/botdiscord)
 #   DEPLOY_BRANCH   — branch to deploy (default: main)
-set -euo pipefail
+set -Eeuo pipefail
 
 log() { echo "[deploy] $*"; }
 
@@ -53,7 +53,7 @@ fi
 log "Deploying to ${SSH_USER}@${SSH_HOST}:${PROJECT_PATH}..."
 
 remote "PROJECT_PATH='${PROJECT_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' APP_PORT='${APP_PORT}' bash -s" <<'DEPLOY_SCRIPT'
-set -euo pipefail
+set -Eeuo pipefail
 
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
 mkdir -p "${PROJECT_PATH}/log"
@@ -76,9 +76,8 @@ rollback() {
 
   echo "[deploy] ERROR: Deploy failed — rolling back to ${LOCAL:0:7}..."
   git reset --hard "${LOCAL}"
-  echo "[deploy] Rebuilding previous version..."
-  ${DOCKER_COMPOSE} build
-  ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
+  echo "[deploy] Restoring previous container image..."
+  IMAGE_TAG="${LOCAL:0:12}" ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
   echo "[deploy] Rollback completed. Manual verification recommended."
   exit 1
 }
@@ -90,6 +89,7 @@ echo "[deploy] Fetching latest changes..."
 git fetch origin "${DEPLOY_BRANCH}"
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/${DEPLOY_BRANCH}")
+IMAGE_TAG="${LOCAL:0:12}"
 
 if [[ "${LOCAL}" == "${REMOTE}" ]]; then
   echo "[deploy] Already up to date (${LOCAL:0:7}). Nothing to deploy."
@@ -118,10 +118,10 @@ done
 
 if [[ "${NEEDS_REBUILD}" == "true" ]]; then
   echo "[deploy] Docker/Gemfile changes detected — full rebuild..."
-  ${DOCKER_COMPOSE} build --no-cache
+  IMAGE_TAG="${IMAGE_TAG}" ${DOCKER_COMPOSE} build --no-cache
 else
   echo "[deploy] Code-only changes — fast rebuild..."
-  ${DOCKER_COMPOSE} build
+  IMAGE_TAG="${IMAGE_TAG}" ${DOCKER_COMPOSE} build
 fi
 
 echo "[deploy] Running migrations..."
@@ -131,30 +131,14 @@ if ! ${DOCKER_COMPOSE} run --rm --entrypoint bin/rails app db:migrate >"${MIGRAT
   rollback
 fi
 
-echo "[deploy] Restarting services..."
-${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
+echo "[deploy] Restarting services and waiting for health..."
+# start_period=15s + interval=10s + retries=3 → máx ~45s de health check
+# --wait-timeout 90 cobre com folga (startup Rails ~10s + 45s = ~55s)
+IMAGE_TAG="${IMAGE_TAG}" ${DOCKER_COMPOSE} up -d --wait --wait-timeout 90 app jobs discord-bot
 
 echo "[deploy] Cleaning up old images..."
 docker image prune -f --filter "until=24h"
-
-echo "[deploy] Checking service health..."
-HEALTH_OK=false
-for i in 1 2 3 4 5 6; do
-  if curl -sf "http://localhost:${APP_PORT}/up" > /dev/null 2>&1; then
-    HEALTH_OK=true
-    break
-  fi
-  echo "[deploy] Health check attempt ${i}/6..."
-  [[ $i -lt 6 ]] && sleep 5
-done
-
-if [[ "${HEALTH_OK}" != "true" ]]; then
-  echo "[deploy] ERROR: Health check failed after 30s"
-  ${DOCKER_COMPOSE} logs --tail=20 app
-  rollback
-fi
-
-echo "[deploy] Health check passed."
+docker builder prune -f --filter "until=24h"
 
 echo "[deploy] Deploy complete: ${REMOTE:0:7}"
 DEPLOY_SCRIPT
