@@ -158,42 +158,10 @@ systemctl enable unattended-upgrades
 ok "Atualizações automáticas de segurança habilitadas"
 
 # ═══════════════════════════════════════════════════════════════════
-# FASE 6: NTP — Chrony com OCI PTP
+# FASE 6: Swap (4GB para 24GB RAM — ratio conservador)
 # ═══════════════════════════════════════════════════════════════════
 
-log "FASE 6: Configurando NTP (chrony)..."
-
-# Desabilitar systemd-timesyncd se ativo (conflito com chrony)
-if systemctl is-active --quiet systemd-timesyncd 2>/dev/null; then
-  systemctl stop systemd-timesyncd
-  systemctl disable systemd-timesyncd
-fi
-
-apt-get install -y -qq chrony
-
-# OCI NTP service (Stratum 1/2 interno do hypervisor)
-cat > /etc/chrony/conf.d/oci-ntp.conf <<'EOF'
-server 169.254.169.254 prefer iburst
-makestep 1.0 3
-rtconutc
-EOF
-
-systemctl restart chrony
-systemctl enable chrony
-
-# Verificar sincronização
-sleep 2
-if chronyc tracking -n 2>/dev/null | grep -q "Leap status.*Normal"; then
-  ok "Chrony configurado com OCI NTP (169.254.169.254)"
-else
-  log "AVISO: Chrony instalado — sincronização pendente (normal nos primeiros segundos)"
-fi
-
-# ═══════════════════════════════════════════════════════════════════
-# FASE 7: Swap (4GB para 24GB RAM — ratio conservador)
-# ═══════════════════════════════════════════════════════════════════
-
-log "FASE 7: Configurando swap..."
+log "FASE 6: Configurando swap..."
 
 # Verificar espaço em disco (6GB mínimo: 4G swap + ~2G pacotes)
 AVAILABLE_GB=$(df -BG / | awk 'NR==2 {gsub("G",""); print $4}')

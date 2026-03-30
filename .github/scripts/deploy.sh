@@ -140,7 +140,7 @@ for i in 1 2 3 4 5 6; do
     break
   fi
   echo "[deploy] Health check attempt ${i}/6..."
-  sleep 5
+  [[ $i -lt 6 ]] && sleep 5
 done
 
 if [[ "${HEALTH_OK}" != "true" ]]; then
