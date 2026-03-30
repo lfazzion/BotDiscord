@@ -190,14 +190,15 @@ sudo bash /tmp/setup.sh
 | Fase | Ação |
 |------|------|
 | **1** | Atualiza SO, instala pacotes essenciais |
-| **2** | Hardening SSH drop-in (desabilita root, senha, fixa KbdInteractiveAuthentication) |
+| **2** | Hardening SSH drop-in (desabilita root, senha, KexAlgorithms pós-quântico) |
 | **3** | Configura segurança nativa de rede OCI (iptables persistente sem UFW) |
-| **4** | Configura Fail2Ban (3 falhas → ban 24h) |
+| **4** | Configura Fail2Ban (sshd: 3 falhas → ban 24h; sshd-ddos: 6 falhas → ban 1h) |
 | **5** | Atualizações automáticas de segurança |
-| **6** | Cria swap 4GB com swappiness=10 |
-| **7** | Instala Docker + Compose + configura daemon |
-| **8** | Otimiza kernel (network, file descriptors, OOM) |
-| **9** | Prepara diretório `/opt/botdiscord` |
+| **6** | Configura swap via zRAM (zstd, 50% RAM, swappiness=100) |
+| **7** | Configura NTP via Chrony (OCI Managed NTP + fallback público) |
+| **8** | Instala Docker + Compose + configura daemon |
+| **9** | Otimiza kernel (TCP BBR, FQ-CoDel, file descriptors, OOM) |
+| **10** | Prepara diretório `/opt/botdiscord` |
 
 ---
 
@@ -365,11 +366,16 @@ swapon --show
 # Verificar OOM kills
 dmesg | grep -i oom
 
-# Aumentar swap temporariamente
-sudo swapoff /swapfile
-sudo fallocate -l 8G /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
+# Verificar estado do zRAM
+zramctl
+
+# Ajustar percentual de swap zRAM (ex: de 50% para 75%)
+sudo sed -i 's/^PERCENT=.*/PERCENT=75/' /etc/default/zramswap
+sudo systemctl restart zramswap
+
+# OOM-Killer: containers agressores são mortos e reiniciados automaticamente
+# pelo Docker (--restart=unless-stopped). Verificar com:
+docker ps -a --filter "status=restarted"
 ```
 
 ---
