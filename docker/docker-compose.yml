@@ -58,7 +58,7 @@ services:
       - ../storage:/rails/storage
     depends_on:
       chrome:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal
     entrypoint: bin/entrypoint-jobs
@@ -95,7 +95,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9222/json/version || exit 1"]
+      test: ["CMD-SHELL", "socat -u OPEN:/dev/null TCP:localhost:9222,connect-timeout=3 2>/dev/null"]
       interval: 5s
       timeout: 3s
       retries: 3
