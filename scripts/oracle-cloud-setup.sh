@@ -74,7 +74,9 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 LoginGraceTime 30
 
-# Hardening 2026: Restrições Criptográficas
+# Hardening 2026: Restrições Criptográficas (state-of-the-art, RFC 9142)
+# ⚠ OCI Cloud Shell pode não suportar curve25519 — testar após aplicar.
+#   Se bloqueado: adicionar ecdh-sha2-nistp256 ao KexAlgorithms.
 KexAlgorithms curve25519-sha256@libssh.org,curve25519-sha256
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
@@ -130,6 +132,7 @@ backend = systemd
 [sshd]
 enabled = true
 port = ssh
+# Ubuntu 24.04: unidade é ssh.service. Oracle Linux/RHEL: ajustar para sshd.service
 journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
 maxretry = 3
 bantime = 86400
@@ -181,11 +184,16 @@ log "FASE 6: Configurando swap via zRAM..."
 
 # Evitar swap em disco (poupa IOPS/escrita no boot volume da Oracle)
 apt-get install -y -qq zram-tools
-echo -e "ALGO=zstd\nPERCENT=50" > /etc/default/zramswap
+cat > /etc/default/zramswap <<'EOF'
+ALGO=zstd
+PERCENT=50
+EOF
 
-# Acesso ao systemctl pode falhar em rootless docker/ci, então permitimos fallback
-systemctl restart zramswap || true
-
+# Restart pode falhar em rootless docker/ci — logar estado para diagnóstico
+if ! systemctl restart zramswap; then
+  log "AVISO: zramswap não iniciou (verifique: systemctl status zramswap)"
+fi
+swapon --show
 ok "zRAM swap configurado (zstd, 50% RAM)"
 
 # Remover arquivo de swap em disco legado, se existir
@@ -196,7 +204,9 @@ if swapon --show | grep -q '/swapfile'; then
   ok "Swapfile legado em disco removido"
 fi
 
-# Ajustar swappiness (Mais agressivo para aproveitar compressão RAM)
+# Ajustar swappiness (mais agressivo para aproveitar compressão RAM)
+# swappiness=100 é seguro com zRAM (swap comprimido em RAM, acesso quase zero),
+# mas PERIGOSO com swap em disco físico — verificar sempre o contexto.
 cat > /etc/sysctl.d/99-swap.conf <<'EOF'
 vm.swappiness=100
 vm.vfs_cache_pressure=50
