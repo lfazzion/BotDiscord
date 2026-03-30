@@ -34,7 +34,7 @@
 - **[2026-03-28]** Infraestrutura Oracle Cloud + Deploy CI/CD.
   - Deploy automatizado via GitHub Actions (`.github/workflows/deploy.yml` + `.github/scripts/deploy.sh`)
   - SSH deploy com detecção de mudanças Docker/Gemfile para rebuild inteligente
-  - Setup script Oracle Cloud VM (`scripts/oracle-cloud-setup.sh`) — 9 fases (OS, SSH, iptables, Fail2Ban, swap, Docker, kernel, deploy dir)
+  - Setup script Oracle Cloud VM (`scripts/oracle-cloud-setup.sh`) — 10 fases (OS, SSH, iptables, Fail2Ban, swap, NTP/Chrony, Docker, kernel, deploy dir)
   - Documentação: Oracle Cloud Free Tier (24GB RAM, 4 OCPUs Ampere A1) + Guia de setup VM
   - Decisão: Oracle Cloud Always Free como hospedagem (sobra 85% de RAM para workload)
 - **[2026-03-26]** Fase 6 implementada: Lapidação e Operação Segura.
@@ -161,3 +161,4 @@ rg "<palavra-chave do problema>" docs/memory/
 | 2026-03-22 | Criado Cold Tier protocol em MEMORY.md + estrutura `docs/memory/` | Cold Tier Protocol |
 | 2026-03-29 | Correções pós-audit: deploy.sh (A1-A7) + oracle-cloud-setup.sh (B7,B9,B11-B14) | Contexto Ativo |
 | 2026-03-30 | Deploy hardening (Propostas 1-3): set -Eeuo pipefail, healthcheck nativo docker-compose, image tagging com IMAGE_TAG, --wait em vez de health check loop, rollback sem rebuild, FASE 10.5 systemd timer cleanup. | Contexto Ativo |
+| 2026-03-30 | Correções script↔guia: KexAlgorithms pós-quântico (sntrup761x25519) no SSH, tabela de fases 9→10 com NTP/Chrony (FASE 7), Fail2Ban dual jail, troubleshooting zRAM. | Contexto Ativo |

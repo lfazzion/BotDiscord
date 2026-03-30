@@ -77,7 +77,7 @@ LoginGraceTime 30
 # Hardening 2026: Restrições Criptográficas (state-of-the-art, RFC 9142)
 # ⚠ OCI Cloud Shell pode não suportar curve25519 — testar após aplicar.
 #   Se bloqueado: adicionar ecdh-sha2-nistp256 ao KexAlgorithms.
-KexAlgorithms curve25519-sha256@libssh.org,curve25519-sha256
+KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256@libssh.org,curve25519-sha256
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 SSH_EOF
@@ -496,6 +496,7 @@ cat <<DEPLOY_MSG
   ✔ SSH: root desabilitado, drop-in conf, LoginGraceTime 30 (Slowloris protection)
   ✔ Firewall Seguro: OCI Security Lists combinadas com iptables, sem UFW
   ✔ Fail2Ban: journalmatch systemd (Ubuntu 24.04)
+  ✔ SSH KEX: sntrup761x25519 (post-quantum) + curve25519 (fallback)
   ✔ Atualizações automáticas de segurança
   ✔ Swap zRAM 50% RAM com swappiness=100
   ✔ NTP: Chrony via OCI Managed NTP (169.254.169.254) + fallback público
