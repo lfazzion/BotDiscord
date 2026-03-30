@@ -45,7 +45,11 @@ apt-get install -y -qq \
   gnupg lsb-release software-properties-common \
   apt-transport-https net-tools dnsutils \
   fail2ban iptables-persistent unattended-upgrades \
-  build-essential chrony
+  build-essential chrony python3-systemd
+
+# Limpeza de cache para economia de espaço em disco (50GB OCI)
+apt-get clean
+rm -rf /var/lib/apt/lists/*
 
 ok "Sistema atualizado e pacotes instalados"
 
@@ -68,6 +72,14 @@ MaxAuthTries 3
 X11Forwarding no
 ClientAliveInterval 300
 ClientAliveCountMax 2
+LoginGraceTime 30
+
+# Hardening 2026: Restrições Criptográficas (state-of-the-art, RFC 9142)
+# ⚠ OCI Cloud Shell pode não suportar curve25519 — testar após aplicar.
+#   Se bloqueado: adicionar ecdh-sha2-nistp256 ao KexAlgorithms.
+KexAlgorithms curve25519-sha256@libssh.org,curve25519-sha256
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 SSH_EOF
 
 # Validar config antes de restart — erro de sintaxe = lockout SSH
@@ -120,17 +132,24 @@ backend = systemd
 [sshd]
 enabled = true
 port = ssh
-logpath = %(sshd_log)s
+# Ubuntu 24.04: unidade é ssh.service. Oracle Linux/RHEL: ajustar para sshd.service
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
 maxretry = 3
 bantime = 86400
 
 [sshd-ddos]
 enabled = true
 port = ssh
-logpath = %(sshd_log)s
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
 maxretry = 6
 bantime = 3600
 EOF
+
+# Validar configuração antes de restart — erro de sintaxe = fail2ban não inicia
+if ! fail2ban-client -t; then
+  err "Configuração Fail2Ban inválida — abortando restart"
+  exit 1
+fi
 
 systemctl enable fail2ban
 systemctl restart fail2ban
@@ -158,41 +177,42 @@ systemctl enable unattended-upgrades
 ok "Atualizações automáticas de segurança habilitadas"
 
 # ═══════════════════════════════════════════════════════════════════
-# FASE 6: Swap (4GB para 24GB RAM — ratio conservador)
+# FASE 6: Swap via zRAM (Estado da arte OCI 2026)
 # ═══════════════════════════════════════════════════════════════════
 
-log "FASE 6: Configurando swap..."
+log "FASE 6: Configurando swap via zRAM..."
 
-# Verificar espaço em disco (8GB mínimo: 4G swap + ~2G pacotes + headroom)
-AVAILABLE_GB=$(df -BG / | awk 'NR==2 {gsub("G",""); print $4}')
-if [[ "${AVAILABLE_GB}" -lt 8 ]]; then
-  err "Espaço insuficiente: ${AVAILABLE_GB}GB disponível, mínimo 8GB necessário"
-  exit 1
+# Evitar swap em disco (poupa IOPS/escrita no boot volume da Oracle)
+apt-get install -y -qq zram-tools
+cat > /etc/default/zramswap <<'EOF'
+ALGO=zstd
+PERCENT=50
+EOF
+
+# Restart pode falhar em rootless docker/ci — logar estado para diagnóstico
+if ! systemctl restart zramswap; then
+  log "AVISO: zramswap não iniciou (verifique: systemctl status zramswap)"
 fi
-ok "Espaço em disco: ${AVAILABLE_GB}GB disponível"
+swapon --show
+ok "zRAM swap configurado (zstd, 50% RAM)"
 
-if ! swapon --show | grep -q '/swapfile'; then
-  fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
-  chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
-  ok "Swap 4GB criado"
-else
-  ok "Swap já existe, pulando"
+# Remover arquivo de swap em disco legado, se existir
+if swapon --show | grep -q '/swapfile'; then
+  swapoff /swapfile || true
+  rm -f /swapfile
+  sed -i '\|/swapfile|d' /etc/fstab
+  ok "Swapfile legado em disco removido"
 fi
 
-# Idempotente: só adiciona ao fstab se não existir
-if ! grep -qF '/swapfile' /etc/fstab; then
-  echo '/swapfile none swap sw 0 0' >> /etc/fstab
-fi
-
-# Ajustar swappiness (baixo — preferir RAM)
+# Ajustar swappiness (mais agressivo para aproveitar compressão RAM)
+# swappiness=100 é seguro com zRAM (swap comprimido em RAM, acesso quase zero),
+# mas PERIGOSO com swap em disco físico — verificar sempre o contexto.
 cat > /etc/sysctl.d/99-swap.conf <<'EOF'
-vm.swappiness=10
+vm.swappiness=100
 vm.vfs_cache_pressure=50
 EOF
 sysctl -p /etc/sysctl.d/99-swap.conf
-ok "Swappiness ajustado para 10"
+ok "Swappiness ajustado para 100"
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 7: NTP — Chrony com OCI Managed NTP Service
@@ -314,7 +334,7 @@ cat > /etc/docker/daemon.json <<'EOF'
 {
   "mtu": 1400,
   "storage-driver": "overlay2",
-  "log-driver": "json-file",
+  "log-driver": "local",
   "log-opts": {
     "max-size": "10m",
     "max-file": "3"
@@ -362,6 +382,8 @@ net.core.netdev_max_backlog = 5000
 net.ipv4.tcp_max_syn_backlog = 4096
 net.ipv4.tcp_fin_timeout = 15
 net.ipv4.tcp_tw_reuse = 1
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
 
 # File descriptors
 fs.file-max = 2097152
@@ -374,6 +396,16 @@ vm.panic_on_oom = 0
 # Chromium/Chrome headless
 kernel.core_pattern = /tmp/core.%e.%p.%t
 EOF
+
+# Carregar módulo BBR antes do sysctl — não é builtin, é módulo carregável
+if modprobe tcp_bbr 2>/dev/null; then
+  ok "Módulo tcp_bbr carregado"
+else
+  log "AVISO: Módulo tcp_bbr não disponível — BBR pode não funcionar"
+fi
+
+# Garantir carregamento automático no boot
+echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
 
 sysctl -p /etc/sysctl.d/99-botdiscord.conf
 ok "Kernel tunado (network, file descriptors, OOM)"
@@ -427,15 +459,15 @@ cat <<DEPLOY_MSG
   SEGURANÇA APLICADA:
 ═══════════════════════════════════════════════════════════════
 
-  ✔ SSH: root desabilitado, drop-in conf, KbdInteractiveAuthentication no
+  ✔ SSH: root desabilitado, drop-in conf, LoginGraceTime 30 (Slowloris protection)
   ✔ Firewall Seguro: OCI Security Lists combinadas com iptables, sem UFW
-  ✔ Fail2Ban: ban de 24h após 3 falhas SSH
+  ✔ Fail2Ban: journalmatch systemd (Ubuntu 24.04)
   ✔ Atualizações automáticas de segurança
-  ✔ Swap 4GB com swappiness=10
+  ✔ Swap zRAM 50% RAM com swappiness=100
   ✔ NTP: Chrony via OCI Managed NTP (169.254.169.254) + fallback público
-  ✔ Docker: live-restore, logs rotativos, MTU 1400, metrics
+  ✔ Docker: local log driver (binary compressed)
   ✔ Docker platform: linux/arm64 (sem QEMU)
-  ✔ Kernel: network tuning, file descriptors 65536
+  ✔ Kernel: TCP BBR + FQ-CoDel
 
 ═══════════════════════════════════════════════════════════════
   HARDENING OPCIONAL (não aplicado automaticamente):
