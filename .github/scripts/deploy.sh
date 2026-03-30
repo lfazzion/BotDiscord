@@ -123,7 +123,6 @@ if ! ${DOCKER_COMPOSE} run --rm --entrypoint bin/rails app db:migrate >"${MIGRAT
   echo "[deploy] ERROR: Migration failed — see ${MIGRATE_LOG} for details"
   cat "${MIGRATE_LOG}"
   rollback
-  exit 1
 fi
 
 echo "[deploy] Restarting services..."
@@ -147,7 +146,6 @@ if [[ "${HEALTH_OK}" != "true" ]]; then
   echo "[deploy] ERROR: Health check failed after 30s"
   ${DOCKER_COMPOSE} logs --tail=20 app
   rollback
-  exit 1
 fi
 
 echo "[deploy] Health check passed."

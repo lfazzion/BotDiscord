@@ -163,7 +163,7 @@ ok "Atualizações automáticas de segurança habilitadas"
 
 log "FASE 6: Configurando swap..."
 
-# Verificar espaço em disco (6GB mínimo: 4G swap + ~2G pacotes)
+# Verificar espaço em disco (8GB mínimo: 4G swap + ~2G pacotes + headroom)
 AVAILABLE_GB=$(df -BG / | awk 'NR==2 {gsub("G",""); print $4}')
 if [[ "${AVAILABLE_GB}" -lt 8 ]]; then
   err "Espaço insuficiente: ${AVAILABLE_GB}GB disponível, mínimo 8GB necessário"
@@ -343,7 +343,8 @@ fi
 
 # Plataforma Docker padrão ARM64 (evita QEMU x86→ARM em builds)
 DOCKER_PROFILE="/home/${DOCKER_USER}/.profile"
-if [[ -f "${DOCKER_PROFILE}" ]] && ! grep -q 'DOCKER_DEFAULT_PLATFORM' "${DOCKER_PROFILE}"; then
+touch "${DOCKER_PROFILE}"
+if ! grep -q 'DOCKER_DEFAULT_PLATFORM' "${DOCKER_PROFILE}"; then
   echo 'export DOCKER_DEFAULT_PLATFORM=linux/arm64' >> "${DOCKER_PROFILE}"
   ok "DOCKER_DEFAULT_PLATFORM=linux/arm64 adicionado ao ~/.profile"
 fi
