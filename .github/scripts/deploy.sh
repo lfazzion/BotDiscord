@@ -25,6 +25,7 @@ done
 SSH_USER="${SSH_USER:-ubuntu}"
 PROJECT_PATH="${PROJECT_PATH:-/opt/botdiscord}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
+APP_PORT="${APP_PORT:-3000}"
 SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15"
 
 # ─── Setup SSH key ──────────────────────────────────────────────────
@@ -51,7 +52,7 @@ fi
 # ─── Deploy ─────────────────────────────────────────────────────────
 log "Deploying to ${SSH_USER}@${SSH_HOST}:${PROJECT_PATH}..."
 
-remote "PROJECT_PATH='${PROJECT_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'DEPLOY_SCRIPT'
+remote "PROJECT_PATH='${PROJECT_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' APP_PORT='${APP_PORT}' bash -s" <<'DEPLOY_SCRIPT'
 set -euo pipefail
 
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
@@ -100,8 +101,13 @@ git checkout "${DEPLOY_BRANCH}"
 git pull origin "${DEPLOY_BRANCH}"
 
 # Rebuild and restart only if Dockerfile or Gemfile changed
-CHANGED=$(git diff --name-only ORIG_HEAD HEAD)
-NEEDS_REBUILD=false
+if git rev-parse --verify ORIG_HEAD > /dev/null 2>&1; then
+  CHANGED=$(git diff --name-only ORIG_HEAD HEAD)
+  NEEDS_REBUILD=false
+else
+  CHANGED=""
+  NEEDS_REBUILD=true
+fi
 
 for pattern in Dockerfile Dockerfile.python Gemfile Gemfile.lock docker/; do
   if echo "${CHANGED}" | grep -q "^${pattern}"; then
@@ -134,7 +140,7 @@ docker image prune -f --filter "until=24h"
 echo "[deploy] Checking service health..."
 HEALTH_OK=false
 for i in 1 2 3 4 5 6; do
-  if curl -sf http://localhost:3000/up > /dev/null 2>&1; then
+  if curl -sf "http://localhost:${APP_PORT}/up" > /dev/null 2>&1; then
     HEALTH_OK=true
     break
   fi

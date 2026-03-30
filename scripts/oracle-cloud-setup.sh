@@ -342,12 +342,12 @@ else
 fi
 
 # Plataforma Docker padrão ARM64 (evita QEMU x86→ARM em builds)
-DOCKER_PROFILE="/home/${DOCKER_USER}/.profile"
-touch "${DOCKER_PROFILE}"
-if ! grep -q 'DOCKER_DEFAULT_PLATFORM' "${DOCKER_PROFILE}"; then
-  echo 'export DOCKER_DEFAULT_PLATFORM=linux/arm64' >> "${DOCKER_PROFILE}"
-  ok "DOCKER_DEFAULT_PLATFORM=linux/arm64 adicionado ao ~/.profile"
-fi
+# /etc/profile.d/ funciona para login shells (SSH, su -) — mais robusto que ~/.profile
+cat > /etc/profile.d/docker-platform.sh <<'EOF'
+export DOCKER_DEFAULT_PLATFORM=linux/arm64
+EOF
+chmod 644 /etc/profile.d/docker-platform.sh
+ok "DOCKER_DEFAULT_PLATFORM=linux/arm64 adicionado ao /etc/profile.d/"
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 9: Otimizações de kernel
