@@ -6,6 +6,7 @@ networks:
 services:
   # ── Serviço principal: API Puma ────────────────────────────────────────────
   app:
+    image: botdiscord:${IMAGE_TAG:-latest}
     build:
       context: ..                    # raiz do projeto
       dockerfile: docker/Dockerfile  # relativo ao context
@@ -25,15 +26,22 @@ services:
       - "3000:3000"
     depends_on:
       chrome:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal
     entrypoint: bin/entrypoint
     command: bin/rails server -b 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/up || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   # ── Serviço de Jobs: Solid Queue ──────────────────────────────────────────
   jobs:
+    image: botdiscord:${IMAGE_TAG:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -50,7 +58,7 @@ services:
       - ../storage:/rails/storage
     depends_on:
       chrome:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal
     entrypoint: bin/entrypoint-jobs
@@ -59,6 +67,7 @@ services:
 
   # ── Discord Bot: Chatbot Tool Caller ─────────────────────────────────────
   discord-bot:
+    image: botdiscord:${IMAGE_TAG:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -85,6 +94,12 @@ services:
       - "9222:9222"
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "socat -u OPEN:/dev/null TCP:localhost:9222,connect-timeout=3 2>/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   # ── Test Runner (on-demand) ─────────────────────────────────────────────

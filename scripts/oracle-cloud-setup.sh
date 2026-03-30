@@ -430,6 +430,40 @@ mkdir -p "$PROJECT_DIR"
 chown "${DOCKER_USER}:${DOCKER_USER}" "$PROJECT_DIR"
 ok "Diretório $PROJECT_DIR criado"
 
+# ═══════════════════════════════════════════════════════════════════
+# FASE 10.5: Timer semanal de limpeza de imagens Docker
+# ═══════════════════════════════════════════════════════════════════
+
+log "FASE 10.5: Configurando limpeza semanal de imagens Docker..."
+
+cat > /etc/systemd/system/docker-image-prune.service <<'PRUNE_SVC_EOF'
+[Unit]
+Description=Docker image prune (remove unused images older than 7 days)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker image prune -a -f --filter "until=168h"
+ExecStartPost=/usr/bin/docker builder prune -f --filter "until=168h"
+PRUNE_SVC_EOF
+
+cat > /etc/systemd/system/docker-image-prune.timer <<'PRUNE_TMR_EOF'
+[Unit]
+Description=Weekly Docker image cleanup
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+PRUNE_TMR_EOF
+
+systemctl daemon-reload
+systemctl enable --now docker-image-prune.timer
+ok "Timer semanal de limpeza de imagens Docker habilitado (domingos 03:00)"
+
 cat <<DEPLOY_MSG
 
 ═══════════════════════════════════════════════════════════════

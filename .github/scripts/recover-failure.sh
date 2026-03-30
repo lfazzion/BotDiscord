@@ -10,7 +10,7 @@
 #
 # Required env vars: GH_TOKEN, WORKFLOW_RUN_ID, WORKFLOW_RUN_URL,
 #                    WORKFLOW_NAME, COMMIT_SHA, GITHUB_REPOSITORY (set by Actions)
-set -euo pipefail
+set -Eeuo pipefail
 
 # ─── Configuration ──────────────────────────────────────────────────
 REPO="${GITHUB_REPOSITORY}"
