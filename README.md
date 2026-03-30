@@ -121,4 +121,4 @@ Esses paradigmas são absolutos durante o life-cycle de updates deste software e
 
 ## Licença
 
-MIT License
+[GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html)

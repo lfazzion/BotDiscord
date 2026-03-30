@@ -18,6 +18,9 @@
   - `.env.example` com variáveis de ambiente documentadas
   - Auditoria de segurança: 16 findings em docs/audit_deploy_setup.md
   - 407 testes passando (0 failures, 0 errors)
+- **[2026-03-29]** Correções de segurança pós-audit deploy.sh + oracle-cloud-setup.sh.
+  - deploy.sh: SSH accept-new, git diff ORIG_HEAD, rollback sem || true com anti-loop, health check HTTP /up, migrate log em log/
+  - oracle-cloud-setup.sh: fallocate dd fallback, disk check pré-alocação, Docker MTU 1400, chrony OCI NTP, DOCKER_DEFAULT_PLATFORM, userns-remap opt-in
 - **[2026-03-28]** Infraestrutura Oracle Cloud + Deploy CI/CD.
   - Deploy automatizado via GitHub Actions (`.github/workflows/deploy.yml` + `.github/scripts/deploy.sh`)
   - SSH deploy com detecção de mudanças Docker/Gemfile para rebuild inteligente
@@ -144,3 +147,4 @@ rg "<palavra-chave do problema>" docs/memory/
 | 2026-03-22 | Criação inicial do MEMORY.md com padrões ratificados extraídos do AGENTS.md e docs/ | Todas |
 | 2026-03-22 | Adicionadas Definition of Done e Escalation Rules ao AGENTS.md | AGENTS.md |
 | 2026-03-22 | Criado Cold Tier protocol em MEMORY.md + estrutura `docs/memory/` | Cold Tier Protocol |
+| 2026-03-29 | Correções pós-audit: deploy.sh (A1-A7) + oracle-cloud-setup.sh (B7,B9,B11-B14) | Contexto Ativo |
