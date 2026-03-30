@@ -55,6 +55,7 @@ remote "PROJECT_PATH='${PROJECT_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s"
 set -euo pipefail
 
 DOCKER_COMPOSE="docker compose -f docker/docker-compose.yml"
+mkdir -p "${PROJECT_PATH}/log"
 MIGRATE_LOG="${PROJECT_PATH}/log/deploy-migrate.log"
 LOCAL=""
 _ROLLBACK_IN_PROGRESS=""
@@ -131,21 +132,24 @@ ${DOCKER_COMPOSE} up -d --force-recreate app jobs discord-bot
 echo "[deploy] Cleaning up old images..."
 docker image prune -f --filter "until=24h"
 
-echo "[deploy] Checking service health (HTTP)..."
+echo "[deploy] Checking service health..."
 HEALTH_OK=false
 for i in 1 2 3 4 5 6; do
-  sleep 5
-  if ${DOCKER_COMPOSE} exec -T app curl -sf http://localhost:3000/up >/dev/null 2>&1; then
+  if curl -sf http://localhost:3000/up > /dev/null 2>&1; then
     HEALTH_OK=true
     break
   fi
-  echo "[deploy] Health check attempt ${i}/6 failed, retrying..."
+  echo "[deploy] Health check attempt ${i}/6..."
+  sleep 5
 done
+
 if [[ "${HEALTH_OK}" != "true" ]]; then
   echo "[deploy] ERROR: Health check failed after 30s"
-  ${DOCKER_COMPOSE} ps
+  ${DOCKER_COMPOSE} logs --tail=20 app
+  rollback
   exit 1
 fi
+
 echo "[deploy] Health check passed."
 
 echo "[deploy] Deploy complete: ${REMOTE:0:7}"

@@ -45,7 +45,7 @@ apt-get install -y -qq \
   gnupg lsb-release software-properties-common \
   apt-transport-https net-tools dnsutils \
   fail2ban iptables-persistent unattended-upgrades \
-  build-essential
+  build-essential chrony
 
 ok "Sistema atualizado e pacotes instalados"
 
@@ -90,7 +90,11 @@ log "FASE 3: Configurando regras seguras iptables..."
 # Inserimos as permissões no topo da cadeia INPUT de forma não-destrutiva.
 # Idempotente: -C (check) falha se a regra não existe, então -I insere.
 for PORT in 22 80 443; do
-  COMMENT=$(case $PORT in 22) echo "SSH";; 80) echo "HTTP";; 443) echo "HTTPS";; esac)
+  case $PORT in
+    22)  COMMENT="SSH" ;;
+    80)  COMMENT="HTTP" ;;
+    443) COMMENT="HTTPS" ;;
+  esac
   iptables -C INPUT -p tcp --dport "${PORT}" -j ACCEPT -m comment --comment "${COMMENT}" 2>/dev/null \
     || iptables -I INPUT 1 -p tcp --dport "${PORT}" -j ACCEPT -m comment --comment "${COMMENT}"
 done
@@ -221,6 +225,85 @@ vm.vfs_cache_pressure=50
 EOF
 sysctl -p /etc/sysctl.d/99-swap.conf
 ok "Swappiness ajustado para 10"
+
+# ═══════════════════════════════════════════════════════════════════
+# FASE 7: NTP — Chrony com OCI Managed NTP Service
+# ═══════════════════════════════════════════════════════════════════
+#
+# OCI fornece NTP gerenciado via 169.254.169.254 (link-local metadata).
+# Stratum 2, sincronizado contra Stratum 1 devices dedicados em cada AD.
+# Ref: https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/configuringntpservice.htm
+#
+# Chrony é superior ao systemd-timesyncd em VMs:
+# - Sincronização inicial mais rápida (segundos vs minutos)
+# - Melhor performance com clock drift de VM (CPU scheduling)
+# - Suporte a hardware timestamping
+# - Acting como NTP server se necessário
+
+log "FASE 7: Configurando NTP via Chrony (OCI)..."
+
+# Desabilitar systemd-timesyncd — conflita com chrony
+systemctl stop systemd-timesyncd 2>/dev/null || true
+systemctl disable systemd-timesyncd 2>/dev/null || true
+
+# Configurar chrony para OCI
+cat > /etc/chrony/chrony.conf <<'CHRONY_EOF'
+# ═══════════════════════════════════════════════════════════
+# OCI Managed NTP Service — fonte primária
+# 169.254.169.254 é o hypervisor metadata endpoint do OCI
+# Stratum 2, baixa latência (< 1ms via VXLAN interno)
+# ═══════════════════════════════════════════════════════════
+server 169.254.169.254 iburst prefer
+
+# Fallback: servidores públicos confiáveis caso OCI NTP fique indisponível
+pool time.google.com iburst maxsources 2
+pool time.cloudflare.com iburst maxsources 2
+
+# Drift file — armazena offset de frequência para sync rápido após reboot
+driftfile /var/lib/chrony/chrony.drift
+
+# Para VMs: permitir step do clock sempre que offset > 1s
+# VMs têm clock drift agressivo por CPU scheduling
+makestep 1 -1
+
+# RTC sync — mantém hardware clock preciso para boot correto
+rtcsync
+
+# Logs para diagnóstico
+logdir /var/log/chrony
+log tracking measurements statistics
+
+# Leap second handling
+leapsectz right/UTC
+
+# Segurança: desabilitar command port (não gerenciado remotamente)
+cmdport 0
+CHRONY_EOF
+
+# Garantir que o drift directory existe
+mkdir -p /var/lib/chrony
+chown _chrony:_chrony /var/lib/chrony 2>/dev/null || true
+
+# Reiniciar e habilitar chrony
+systemctl restart chrony
+systemctl enable chrony
+ok "Chrony configurado e habilitado (OCI NTP 169.254.169.254 + fallback público)"
+
+# Aguardar sincronização inicial — waitsync é mais robusto que sleep fixo
+# Ref: chronyc waitsync <max_loops> <max_error_seconds>
+# - max_loops: número máximo de tentativas (1s entre cada)
+# - max_error: offset máximo aceitável em segundos
+if chronyc waitsync 30 0.1 2>/dev/null; then
+  ok "NTP sincronizado (offset < 100ms)"
+else
+  log "AVISO: Sincronização inicial não atingiu 100ms em 30s — continuando"
+  log "  Chrony continuará sincronizando em background"
+  log "  Verificar com: chronyc tracking"
+fi
+
+# Mostrar status para o operador
+chronyc sources -n 2>/dev/null || true
+chronyc tracking 2>/dev/null | grep -E "Reference ID|Stratum|System time|Leap status" || true
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 8: Docker + Docker Compose
@@ -380,9 +463,9 @@ cat <<DEPLOY_MSG
   ✔ Fail2Ban: ban de 24h após 3 falhas SSH
   ✔ Atualizações automáticas de segurança
   ✔ Swap 4GB com swappiness=10
+  ✔ NTP: Chrony via OCI Managed NTP (169.254.169.254) + fallback público
   ✔ Docker: live-restore, logs rotativos, MTU 1400, metrics
   ✔ Docker platform: linux/arm64 (sem QEMU)
-  ✔ NTP: Chrony com OCI PTP (169.254.169.254)
   ✔ Kernel: network tuning, file descriptors 65536
 
 ═══════════════════════════════════════════════════════════════
