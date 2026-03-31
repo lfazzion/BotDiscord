@@ -60,8 +60,7 @@ class ScrapeYoutubeJob < ApplicationJob
     profile.update!(
       display_name: metadata[:title] || profile.display_name,
       bio: metadata[:description] || profile.bio,
-      followers_count: metadata[:subscriber_count] || profile.followers_count,
-      posts_count: metadata[:video_count] || profile.posts_count
+      followers_count: metadata[:subscriber_count] || profile.followers_count
     )
   end
 

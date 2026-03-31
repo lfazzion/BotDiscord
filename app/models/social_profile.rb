@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class SocialProfile < ApplicationRecord
   PLATFORMS = %w[twitter instagram youtube tiktok].freeze
 
