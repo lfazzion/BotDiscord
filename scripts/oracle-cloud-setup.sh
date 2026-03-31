@@ -145,21 +145,21 @@ bantime = 3600
 findtime = 600
 maxretry = 3
 backend = systemd
+allowipv6 = auto
 
 [sshd]
 enabled = true
 port = ssh
-# Ubuntu 24.04: unidade é ssh.service. Oracle Linux/RHEL: ajustar para sshd.service
-journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+# mode=aggressive = normal + ddos + extra (substitui o antigo jail sshd-ddos)
+# Detecta: auth failures, conexões sem identificação, timeouts, protocolo inválido, negotiation failures
+# Ref: github.com/fail2ban/fail2ban/blob/master/config/filter.d/sshd.conf
+mode = aggressive
+# journalmatch: Ubuntu 24.04 renomeou sshd.service → ssh.service.
+# _COMM=sshd-session é para OpenSSH 9.8+ (outros distros, futuro Ubuntu).
+# Cobertura cross-distro: + = AND entre pares, espaço = OR entre grupos.
+journalmatch = _SYSTEMD_UNIT=ssh.service + _SYSTEMD_UNIT=sshd.service + _COMM=sshd + _COMM=sshd-session
 maxretry = 3
 bantime = 86400
-
-[sshd-ddos]
-enabled = true
-port = ssh
-journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
-maxretry = 6
-bantime = 3600
 EOF
 
 # Validar configuração antes de restart — erro de sintaxe = fail2ban não inicia
@@ -512,7 +512,7 @@ cat <<DEPLOY_MSG
 
   ✔ SSH: root desabilitado, drop-in conf, LoginGraceTime 30 (Slowloris protection)
   ✔ Firewall Seguro: OCI Security Lists combinadas com iptables, sem UFW
-  ✔ Fail2Ban: journalmatch systemd (Ubuntu 24.04)
+  ✔ Fail2Ban: mode=aggressive (auth + ddos + extra), journalmatch systemd
   ✔ SSH KEX: sntrup761x25519 (post-quantum) + curve25519 (fallback)
   ✔ Atualizações automáticas de segurança
   ✔ Swap zRAM 50% RAM com swappiness=100
