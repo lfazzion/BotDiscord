@@ -83,7 +83,10 @@ MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 SSH_EOF
 
 # Criar diretório de privilege separation se não existir (fresh VM)
+# Ref: systemd/systemd#31564 — Debian/Ubuntu usa /run/sshd (outros usam /usr/)
+# Ref: monitorvps.com (Mar 2026) — bug idêntico no Ubuntu 24.04
 mkdir -p /run/sshd
+chmod 0755 /run/sshd
 
 # Validar config antes de restart — erro de sintaxe = lockout SSH
 if ! sshd -t; then
@@ -92,8 +95,19 @@ if ! sshd -t; then
   exit 1
 fi
 
-systemctl reload ssh
-ok "SSH hardening aplicado via arquivo drop-in (reload, não restart)"
+# Ubuntu 24.04: ssh.socket (socket activation) — drop-in é aplicado
+# automaticamente na próxima conexão. Restart garante efeito imediato.
+# Oracle Linux/RHEL: sshd.service — reload tradicional.
+if systemctl is-active ssh.socket &>/dev/null; then
+  systemctl restart ssh.socket
+  ok "SSH hardening aplicado via drop-in (ssh.socket — efeito imediato)"
+elif systemctl is-active ssh.service &>/dev/null; then
+  systemctl reload ssh.service
+  ok "SSH hardening aplicado via drop-in (ssh.service)"
+else
+  systemctl restart sshd.service
+  ok "SSH hardening aplicado via drop-in (sshd.service — RHEL/OL)"
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # FASE 3: Segurança — Firewall iptables (OCI Seguro)
