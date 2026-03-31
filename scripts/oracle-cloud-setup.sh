@@ -474,6 +474,14 @@ mkdir -p "$PROJECT_DIR"
 chown "${DOCKER_USER}:${DOCKER_USER}" "$PROJECT_DIR"
 ok "Diretório $PROJECT_DIR criado"
 
+# Criar diretório storage com permissões abertas para o bind mount Docker.
+# O container roda como usuário 'rails' (UID interno), mas o bind mount
+# pertence ao 'ubuntu' (UID 1000). SQLite precisa criar arquivos aqui.
+STORAGE_DIR="$PROJECT_DIR/storage"
+mkdir -p "$STORAGE_DIR"
+chmod 777 "$STORAGE_DIR"
+ok "Storage directory criado com permissões para bind mount Docker"
+
 # ═══════════════════════════════════════════════════════════════════
 # FASE 10.5: Timer semanal de limpeza de imagens Docker
 # ═══════════════════════════════════════════════════════════════════

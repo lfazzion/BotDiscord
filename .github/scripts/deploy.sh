@@ -85,6 +85,11 @@ trap rollback ERR
 
 cd "${PROJECT_PATH}"
 
+# Ensure storage directory has correct permissions for Docker bind mount.
+# Git may reset permissions, and the container needs write access as 'rails' user.
+mkdir -p "${PROJECT_PATH}/storage"
+chmod 777 "${PROJECT_PATH}/storage"
+
 echo "[deploy] Fetching latest changes..."
 git fetch origin "${DEPLOY_BRANCH}"
 LOCAL=$(git rev-parse HEAD)

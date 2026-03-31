@@ -46,6 +46,8 @@ class ChatSessionManager
     def build_chat(model: nil)
       chat = model ? RubyLLM.chat(model: model) : RubyLLM.chat
       all_tool_classes.each { |tool_class| chat.with_tool(tool_class) }
+      prompt = Llm::PromptLoader.load('chatbot')
+      chat.with_instructions(prompt[:system])
       chat
     end
 
