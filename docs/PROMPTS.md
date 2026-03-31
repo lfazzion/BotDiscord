@@ -110,7 +110,7 @@ Docker, Minitest + FactoryBot. Veja AGENTS.md para convenções completas.
 1. Liste TODOS os arquivos que precisam ser CRIADOS (com path completo).
 2. Liste TODOS os arquivos que precisam ser MODIFICADOS.
 3. Para CADA arquivo, descreva exatamente O QUE fazer nele.
-4. Inclua code snippets quando a implementação exigir um padrão específico.
+4. Pesquise na internet as documentações mais recentes e melhores práticas juntamente com exemplos de código em sites como GitHub, Stack Overflow, etc. Inclua code snippets quando a implementação exigir um padrão específico.
 5. Crie um checklist de tarefas com checkboxes (- [ ]) para cada passo.
 6. Ao final, adicione uma seção "## Perguntas" com decisões que precisam de validação humana.
 </instructions>

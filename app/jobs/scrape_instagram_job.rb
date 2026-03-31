@@ -48,7 +48,7 @@ class ScrapeInstagramJob < ApplicationJob
   end
 
   def scrape_with_python(profile, options)
-    runner = ScrapingServices::NodriverRunner.new
+    runner = ScrapingServices::NodriverRunner
     runner.scrape_instagram_profile(
       profile.platform_username,
       proxy: current_proxy(options)
@@ -74,7 +74,6 @@ class ScrapeInstagramJob < ApplicationJob
       bio: data[:biography] || profile.bio,
       followers_count: data[:followers_count] || profile.followers_count,
       following_count: data[:following_count] || profile.following_count,
-      posts_count: data[:posts_count] || profile.posts_count,
       verified: data[:is_verified] || profile.verified
     )
   end
@@ -82,7 +81,7 @@ class ScrapeInstagramJob < ApplicationJob
   def create_snapshot(profile, data)
     ProfileSnapshot.find_or_create_by(
       social_profile: profile,
-      captured_at: Time.current.beginning_of_hour
+      recorded_at: Time.current.beginning_of_hour
     ) do |snapshot|
       snapshot.followers_count = data[:followers_count]
       snapshot.following_count = data[:following_count]

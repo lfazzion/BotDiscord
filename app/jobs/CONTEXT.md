@@ -22,9 +22,10 @@ Jobs executados em background pelo Solid Queue.
 2. **Nunca retry imediato em 403/429/captcha**: Backoff de 6-12 horas via `retry_job wait:`
 3. **Snapshot dedup window**: Ignorar salvamento se última coleta foi há menos de 2 horas
 4. **Inheritance**: Herdar de `ApplicationJob`, usar `queue_as :default`
- 5. **Null vs Zero**: Ver regra cross-cutting #3 no AGENTS.md
- 6. **Backoff**: Ver regra cross-cutting #4 no AGENTS.md
- 7. **Logging**: Ver regra cross-cutting #6 no AGENTS.md
+5. **Null vs Zero**: Ver regra cross-cutting #3 no AGENTS.md
+6. **Backoff**: Ver regra cross-cutting #4 no AGENTS.md
+7. **Logging**: Ver regra cross-cutting #6 no AGENTS.md
+8. **`posts_count` vai para `ProfileSnapshot`, nunca para `profile.update!`**: O campo `posts_count` existe na tabela `profile_snapshots`, não em `social_profiles`. Chamar `profile.update!(posts_count: ...)` levanta `ActiveModel::UnknownAttributeError`.
 
 ## Cross-References
 
