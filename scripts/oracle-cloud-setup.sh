@@ -200,18 +200,45 @@ ok "Atualizações automáticas de segurança habilitadas"
 log "FASE 6: Configurando swap via zRAM..."
 
 # Evitar swap em disco (poupa IOPS/escrita no boot volume da Oracle)
-apt-get install -y -qq zram-tools
-cat > /etc/default/zramswap <<'EOF'
-ALGO=zstd
-PERCENT=50
-EOF
+# Configuração manual via kernel module + systemd — funciona em qualquer distro,
+# sem depender de zram-tools (Debian only) ou zram-config (formato diferente).
+#
+# Ref: FixPedia (Feb 2026) — systemd unit pattern para zram
+# Ref: UbuntuHandbook (Aug 2024) — /sys/block/zram0 sysfs interface
+# Ref: kernel docs — Documentation/admin-guide/blockdev/zram.rst
 
-# Restart pode falhar em rootless docker/ci — logar estado para diagnóstico
-if ! systemctl restart zramswap; then
-  log "AVISO: zramswap não iniciou (verifique: systemctl status zramswap)"
-fi
+modprobe zram num_devices=1
+echo "zstd" > /sys/block/zram0/comp_algorithm
+echo "$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 2 ))K" > /sys/block/zram0/disksize
+mkswap /dev/zram0
+swapon -p 100 /dev/zram0
+
+# Service systemd para persistir após reboot
+# Múltiplos ExecStart (um por passo) — padrão oneshot, mais legível que shell chain
+cat > /etc/systemd/system/zram-setup.service <<'ZRAM_SVC'
+[Unit]
+Description=zRAM compressed swap
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStartPre=/sbin/modprobe zram num_devices=1
+ExecStart=/bin/sh -c 'echo zstd > /sys/block/zram0/comp_algorithm'
+ExecStart=/bin/sh -c 'echo $(( $(awk "/MemTotal/{print \$2}" /proc/meminfo) / 2 ))K > /sys/block/zram0/disksize'
+ExecStart=/sbin/mkswap /dev/zram0
+ExecStart=/sbin/swapon -p 100 /dev/zram0
+ExecStop=/sbin/swapoff /dev/zram0
+ExecStopPost=/bin/sh -c 'echo 1 > /sys/block/zram0/reset 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
+ZRAM_SVC
+
+systemctl daemon-reload
+systemctl enable zram-setup
 swapon --show
-ok "zRAM swap configurado (zstd, 50% RAM)"
+ok "zRAM swap configurado (zstd, 50% RAM) — service persistente"
 
 # Remover arquivo de swap em disco legado, se existir
 if swapon --show | grep -q '/swapfile'; then
