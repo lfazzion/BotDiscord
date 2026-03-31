@@ -19,6 +19,7 @@ class ChatSessionManagerTest < ActiveSupport::TestCase
   test 'get_or_create cria sessão nova' do
     mock_chat = mock('chat')
     mock_chat.stubs(:with_tool).returns(mock_chat)
+    mock_chat.stubs(:with_instructions).returns(mock_chat)
     RubyLLM.stubs(:chat).returns(mock_chat)
 
     chat = ChatSessionManager.get_or_create('user1', 'channel1')
@@ -28,6 +29,7 @@ class ChatSessionManagerTest < ActiveSupport::TestCase
   test 'get_or_create retorna sessão existente' do
     mock_chat = mock('chat')
     mock_chat.stubs(:with_tool).returns(mock_chat)
+    mock_chat.stubs(:with_instructions).returns(mock_chat)
     RubyLLM.stubs(:chat).returns(mock_chat)
 
     chat1 = ChatSessionManager.get_or_create('user1', 'channel1')
