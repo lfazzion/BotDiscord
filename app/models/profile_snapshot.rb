@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 class ProfileSnapshot < ApplicationRecord
   SNAPSHOT_DEDUP_WINDOW = 2.hours
 

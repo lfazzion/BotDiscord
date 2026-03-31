@@ -73,7 +73,7 @@ class ScrapeYoutubeJob < ApplicationJob
 
       post.assign_attributes(
         post_type: video[:post_type] || 'video',
-        caption: video[:title],
+        content: video[:title],
         posted_at: video[:posted_at],
         views_count: video[:views_count],
         thumbnail_url: video[:thumbnail_url],
@@ -87,7 +87,7 @@ class ScrapeYoutubeJob < ApplicationJob
   def create_snapshot(profile, metadata)
     ProfileSnapshot.find_or_create_by(
       social_profile: profile,
-      captured_at: Time.current.beginning_of_hour
+      recorded_at: Time.current.beginning_of_hour
     ) do |snapshot|
       snapshot.followers_count = metadata[:subscriber_count]
       snapshot.posts_count = metadata[:video_count]
