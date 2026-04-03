@@ -36,6 +36,19 @@ module ScrapingServices
 
     TWEETS_SCRIPT = <<~JS
       (function() {
+        function parseCount(str) {
+          if (!str) return null;
+          str = str.trim().replace(/,/g, '');
+          var match = str.match(/^([\\d.]+)\\s*([KMBT])?$/i);
+          if (!match) return parseInt(str.replace(/[^0-9]/g, ''), 10) || null;
+          var num = parseFloat(match[1]);
+          var suffix = match[2] ? match[2].toUpperCase() : null;
+          if (suffix === 'K') num *= 1000;
+          else if (suffix === 'M') num *= 1000000;
+          else if (suffix === 'B') num *= 1000000000;
+          else if (suffix === 'T') num *= 1000000000000;
+          return Math.round(num);
+        }
         try {
           var tweets = [];
           var items = document.querySelectorAll('[data-testid="tweet"]');
@@ -56,9 +69,9 @@ module ScrapingServices
                 caption: tweetText ? tweetText.innerText : null,
                 posted_at: timeEl ? timeEl.getAttribute('datetime') : null,
                 post_type: 'text',
-                likes_count: null,
-                comments_count: null,
-                shares_count: null
+                likes_count: likesEl ? parseCount(likesEl.textContent) : null,
+                comments_count: repliesEl ? parseCount(repliesEl.textContent) : null,
+                shares_count: retweetsEl ? parseCount(retweetsEl.textContent) : null
               });
             } catch(e) {}
           });
@@ -122,7 +135,7 @@ module ScrapingServices
       {
         platform_post_id: tweet['platform_post_id'].to_s,
         post_type: 'text',
-        caption: tweet['caption'],
+        content: tweet['caption'],
         posted_at: tweet['posted_at'] ? Time.parse(tweet['posted_at']) : nil,
         likes_count: tweet['likes_count'],
         comments_count: tweet['comments_count'],

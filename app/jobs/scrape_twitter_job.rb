@@ -74,7 +74,9 @@ class ScrapeTwitterJob < ApplicationJob
       bio: data[:bio] || profile.bio,
       followers_count: data[:followers_count] || profile.followers_count,
       following_count: data[:following_count] || profile.following_count,
-      verified: data[:is_verified] || profile.verified
+      posts_count: data[:posts_count] || profile.posts_count,
+      verified: data[:is_verified] || profile.verified,
+      avatar_url: data[:profile_image_url] || profile.avatar_url
     )
   end
 

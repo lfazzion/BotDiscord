@@ -15,10 +15,10 @@ class YoutubeScraperServiceTest < ActiveSupport::TestCase
     assert result[:title].present?
   end
 
-  test 'extract_videos_batch parses output correctly' do
+  test 'extract_videos_detailed parses output correctly' do
     skip 'yt-dlp not installed' unless system('which yt-dlp > /dev/null 2>&1')
 
-    videos = ScrapingServices::YoutubeScraperService.extract_videos_batch(
+    videos = ScrapingServices::YoutubeScraperService.extract_videos_detailed(
       'https://www.youtube.com/@YouTube',
       limit: 3
     )

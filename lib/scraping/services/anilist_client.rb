@@ -19,6 +19,12 @@ module ScrapingServices
             popularity
             averageScore
             episodes
+            duration
+            format
+            studios { nodes { name } }
+            meanScore
+            siteUrl
+            bannerImage
             coverImage { large }
             genres
             status
@@ -38,6 +44,12 @@ module ScrapingServices
             popularity
             averageScore
             episodes
+            duration
+            format
+            studios { nodes { name } }
+            meanScore
+            siteUrl
+            bannerImage
             coverImage { large }
             genres
             status
@@ -57,6 +69,12 @@ module ScrapingServices
             popularity
             averageScore
             episodes
+            duration
+            format
+            studios { nodes { name } }
+            meanScore
+            siteUrl
+            bannerImage
             coverImage { large }
             genres
             status

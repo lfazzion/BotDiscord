@@ -30,7 +30,9 @@ class ToolBase < RubyLLM::Tool
       following_count: profile.following_count,
       bio: profile.bio,
       verified: profile.verified,
-      platform_url: profile.platform_url
+      platform_url: profile.platform_url,
+      posts_count: profile.posts_count,
+      is_private: profile.is_private
     }
   end
 

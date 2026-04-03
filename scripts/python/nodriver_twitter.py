@@ -17,10 +17,7 @@ async def scrape_profile(username, proxy=None):
     if proxy:
         browser_args.append(f"--proxy-server={proxy}")
 
-    browser = await uc.start(
-        headless=True,
-        browser_args=browser_args
-    )
+    browser = await uc.start(headless=True, browser_args=browser_args)
 
     try:
         page = await browser.get(f"https://x.com/{username}")
@@ -51,14 +48,14 @@ async def scrape_profile(username, proxy=None):
                                         return JSON.stringify({
                                             user_id: user.id_str || user.id,
                                             username: user.screen_name,
-                                            full_name: user.name,
-                                            biography: user.description,
+                                            display_name: user.name,
+                                            bio: user.description,
                                             followers_count: user.followers_count,
                                             following_count: user.friends_count,
                                             posts_count: user.statuses_count,
                                             is_private: user.protected,
                                             is_verified: user.verified,
-                                            profile_pic_url: user.profile_image_url_https,
+                                            profile_image_url: user.profile_image_url_https,
                                             banner_url: user.profile_banner_url,
                                             location: user.location
                                         });
@@ -73,8 +70,8 @@ async def scrape_profile(username, proxy=None):
                     if (metaDesc) {
                         return JSON.stringify({
                             username: username,
-                            biography: metaDesc.getAttribute('content'),
-                            full_name: metaTitle ? metaTitle.getAttribute('content') : null,
+                            bio: metaDesc.getAttribute('content'),
+                            display_name: metaTitle ? metaTitle.getAttribute('content') : null,
                             fallback: true
                         });
                     }
@@ -98,10 +95,7 @@ async def scrape_posts(username, limit=20, proxy=None):
     if proxy:
         browser_args.append(f"--proxy-server={proxy}")
 
-    browser = await uc.start(
-        headless=True,
-        browser_args=browser_args
-    )
+    browser = await uc.start(headless=True, browser_args=browser_args)
 
     try:
         page = await browser.get(f"https://x.com/{username}")
@@ -137,7 +131,7 @@ async def scrape_posts(username, limit=20, proxy=None):
                                     caption: tweetText ? tweetText.textContent : null,
                                     likes_count: likes ? parseInt(likes.textContent.replace(/[^0-9]/g, '')) || null : null,
                                     comments_count: replies ? parseInt(replies.textContent.replace(/[^0-9]/g, '')) || null : null,
-                                    retweet_count: retweets ? parseInt(retweets.textContent.replace(/[^0-9]/g, '')) || null : null,
+                                    shares_count: retweets ? parseInt(retweets.textContent.replace(/[^0-9]/g, '')) || null : null,
                                     posted_at: timeEl ? timeEl.getAttribute('datetime') : null,
                                     permalink: permalink ? 'https://x.com' + permalink : null,
                                     is_video: !!article.querySelector('[data-testid="videoPlayer"]')

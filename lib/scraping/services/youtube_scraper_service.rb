@@ -22,27 +22,38 @@ module ScrapingServices
         nil
       end
 
-      def extract_videos_batch(channel_url, limit: 50, proxy: nil)
+      def extract_videos_detailed(channel_url, limit: 10, proxy: nil)
         command = build_videos_command(channel_url, limit, proxy)
+        output, _, status = execute_yt_dlp(command)
+
+        return extract_videos_flat(channel_url, limit: limit, proxy: proxy) unless status.success? && output.strip.present?
+
+        parse_video_list(output.strip)
+      rescue StandardError => e
+        Rails.logger.error "[YoutubeScraperService] Erro ao extrair videos detalhados: #{e.message}"
+        extract_videos_flat(channel_url, limit: limit, proxy: proxy)
+      end
+
+      private
+
+      def extract_videos_flat(channel_url, limit: 10, proxy: nil)
+        command = build_videos_flat_command(channel_url, limit, proxy)
         output, _, status = execute_yt_dlp(command)
 
         return [] unless status.success? && output.strip.present?
 
         parse_video_list(output.strip)
       rescue StandardError => e
-        Rails.logger.error "[YoutubeScraperService] Erro ao extrair videos: #{e.message}"
+        Rails.logger.error "[YoutubeScraperService] Erro ao extrair videos flat: #{e.message}"
         []
       end
-
-      private
 
       def build_metadata_command(channel_url, proxy)
         cmd = [
           'yt-dlp',
           '--dump-json',
           '--no-download',
-          '--flat-playlist',
-          '--playlist-items', '1',
+          '--playlist-end', '1',
           channel_url
         ]
         cmd += ['--proxy', proxy] if proxy.present?
@@ -50,6 +61,19 @@ module ScrapingServices
       end
 
       def build_videos_command(channel_url, limit, proxy)
+        videos_url = "#{channel_url}/videos"
+        cmd = [
+          'yt-dlp',
+          '--dump-json',
+          '--no-download',
+          '--playlist-end', limit.to_s,
+          videos_url
+        ]
+        cmd += ['--proxy', proxy] if proxy.present?
+        cmd
+      end
+
+      def build_videos_flat_command(channel_url, limit, proxy)
         videos_url = "#{channel_url}/videos"
         cmd = [
           'yt-dlp',
@@ -74,7 +98,8 @@ module ScrapingServices
           description: data['description'],
           subscriber_count: data['channel_follower_count'],
           video_count: data['playlist_count'],
-          thumbnail_url: data['thumbnail'] || data['channel_thumbnail_url']
+          thumbnail_url: data['thumbnail'] || data['channel_thumbnail_url'],
+          avatar_url: data['thumbnail'] || data['channel_thumbnail_url']
         }
       end
 
@@ -90,6 +115,8 @@ module ScrapingServices
             post_type: 'video',
             posted_at: data['upload_date'] ? Date.parse(data['upload_date']) : nil,
             views_count: data['view_count'],
+            likes_count: data['like_count'],
+            comments_count: data['comment_count'],
             thumbnail_url: data['thumbnail'],
             video_url: data['url'] || "https://www.youtube.com/watch?v=#{data['id']}"
           }

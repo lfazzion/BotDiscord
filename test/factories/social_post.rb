@@ -9,6 +9,7 @@ FactoryBot.define do
     shares_count { Faker::Number.between(from: 0, to: 5_000) }
     views_count { Faker::Number.between(from: 0, to: 1_000_000) }
     posted_at { Faker::Time.backward(days: 30) }
+    shortcode { SecureRandom.alphanumeric(11) }
 
     trait :video do
       post_type { "video" }

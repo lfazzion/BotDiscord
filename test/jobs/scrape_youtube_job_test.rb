@@ -49,7 +49,7 @@ class ScrapeYoutubeJobTest < ActiveJob::TestCase
 
   test 'should update profile, create posts and snapshot on success' do
     ScrapingServices::YoutubeScraperService.stubs(:extract_channel_metadata).returns(@metadata)
-    ScrapingServices::YoutubeScraperService.stubs(:extract_videos_batch).returns(@videos)
+    ScrapingServices::YoutubeScraperService.stubs(:extract_videos_detailed).returns(@videos)
 
     assert_difference 'SocialPost.count', 2 do
       ScrapeYoutubeJob.perform_now(@profile.id)
@@ -78,7 +78,7 @@ class ScrapeYoutubeJobTest < ActiveJob::TestCase
 
   test 'should handle empty videos array' do
     ScrapingServices::YoutubeScraperService.stubs(:extract_channel_metadata).returns(@metadata)
-    ScrapingServices::YoutubeScraperService.stubs(:extract_videos_batch).returns([])
+    ScrapingServices::YoutubeScraperService.stubs(:extract_videos_detailed).returns([])
 
     assert_no_difference 'SocialPost.count' do
       ScrapeYoutubeJob.perform_now(@profile.id)
@@ -98,7 +98,7 @@ class ScrapeYoutubeJobTest < ActiveJob::TestCase
 
   test 'should be idempotent for snapshots within same hour' do
     ScrapingServices::YoutubeScraperService.stubs(:extract_channel_metadata).returns(@metadata)
-    ScrapingServices::YoutubeScraperService.stubs(:extract_videos_batch).returns(@videos)
+    ScrapingServices::YoutubeScraperService.stubs(:extract_videos_detailed).returns(@videos)
 
     ScrapeYoutubeJob.perform_now(@profile.id)
     first_count = ProfileSnapshot.where(social_profile: @profile).count

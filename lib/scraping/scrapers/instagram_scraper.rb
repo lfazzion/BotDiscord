@@ -117,7 +117,7 @@ module ScrapingServices
       {
         platform_post_id: post['platform_post_id'].to_s,
         post_type: post_type,
-        caption: post['caption'],
+        content: post['caption'],
         likes_count: post['likes_count'],
         comments_count: post['comments_count'],
         posted_at: post['posted_at'] ? Time.at(post['posted_at']) : nil,
