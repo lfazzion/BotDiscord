@@ -53,7 +53,8 @@ module ScrapingServices
           'yt-dlp',
           '--dump-json',
           '--no-download',
-          '--playlist-end', '1',
+          '--flat-playlist',
+          '--playlist-items', '1',
           channel_url
         ]
         cmd += ['--proxy', proxy] if proxy.present?
@@ -93,8 +94,8 @@ module ScrapingServices
 
       def parse_metadata(data)
         {
-          channel_id: data['channel_id'] || data['id'],
-          title: data['channel'] || data['uploader'] || data['title'],
+          channel_id: data['channel_id'] || data['playlist_channel_id'] || data['id'],
+          title: data['channel'] || data['uploader'] || data['playlist_channel'] || data['playlist_uploader'] || data['title'],
           description: data['description'],
           subscriber_count: data['channel_follower_count'],
           video_count: data['playlist_count'],
