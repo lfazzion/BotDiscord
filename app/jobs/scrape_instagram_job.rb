@@ -74,7 +74,10 @@ class ScrapeInstagramJob < ApplicationJob
       bio: data[:biography] || profile.bio,
       followers_count: data[:followers_count] || profile.followers_count,
       following_count: data[:following_count] || profile.following_count,
-      verified: data[:is_verified] || profile.verified
+      posts_count: data[:posts_count] || profile.posts_count,
+      verified: data[:is_verified] || profile.verified,
+      avatar_url: data[:profile_pic_url] || profile.avatar_url,
+      is_private: data[:is_private] || profile.is_private
     )
   end
 

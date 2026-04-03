@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_22_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_000001) do
   create_table "discovered_profiles", force: :cascade do |t|
     t.text "bio"
     t.string "classification"
@@ -106,6 +106,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_22_000002) do
     t.string "post_type", null: false
     t.datetime "posted_at"
     t.bigint "shares_count"
+    t.string "shortcode"
     t.integer "social_profile_id", null: false
     t.string "thumbnail_url"
     t.datetime "updated_at", null: false
@@ -125,11 +126,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_22_000002) do
     t.string "display_name"
     t.bigint "followers_count"
     t.bigint "following_count"
+    t.boolean "is_private", default: false
     t.datetime "last_collected_at"
     t.string "platform", null: false
     t.string "platform_url"
     t.string "platform_user_id", null: false
     t.string "platform_username", null: false
+    t.integer "posts_count", default: 0, null: false
     t.string "profile_url"
     t.datetime "updated_at", null: false
     t.boolean "verified", default: false

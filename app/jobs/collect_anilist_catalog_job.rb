@@ -70,7 +70,8 @@ class CollectAnilistCatalogJob < ApplicationJob
       genres: item["genres"]&.join(","),
       status: mapped_status,
       original_language: "ja",
-      metadata: item.except("title", "description", "startDate", "averageScore", "popularity", "coverImage", "genres")
+      metadata: item.except("title", "description", "startDate", "averageScore",
+                             "popularity", "coverImage", "genres", "status")
     )
 
     catalog.save! if catalog.changed?

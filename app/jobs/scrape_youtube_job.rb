@@ -17,7 +17,7 @@ class ScrapeYoutubeJob < ApplicationJob
     metadata = ScrapingServices::YoutubeScraperService.extract_channel_metadata(channel_url, proxy: proxy)
     return if metadata.nil?
 
-    videos = ScrapingServices::YoutubeScraperService.extract_videos_batch(
+    videos = ScrapingServices::YoutubeScraperService.extract_videos_detailed(
       channel_url,
       limit: options.fetch(:limit, 50),
       proxy: proxy
@@ -60,7 +60,9 @@ class ScrapeYoutubeJob < ApplicationJob
     profile.update!(
       display_name: metadata[:title] || profile.display_name,
       bio: metadata[:description] || profile.bio,
-      followers_count: metadata[:subscriber_count] || profile.followers_count
+      followers_count: metadata[:subscriber_count] || profile.followers_count,
+      posts_count: metadata[:video_count] || profile.posts_count,
+      avatar_url: metadata[:thumbnail_url] || profile.avatar_url
     )
   end
 
@@ -77,7 +79,9 @@ class ScrapeYoutubeJob < ApplicationJob
         posted_at: video[:posted_at],
         views_count: video[:views_count],
         thumbnail_url: video[:thumbnail_url],
-        video_url: video[:video_url]
+        video_url: video[:video_url],
+        likes_count: video[:likes_count],
+        comments_count: video[:comments_count]
       )
 
       post.save! if post.changed?
