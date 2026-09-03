@@ -95,10 +95,8 @@ module Fetcher
         # Público de propósito: é onde mora a leitura do que o yt-dlp escreveu, e
         # é por aqui que o teste entra sem precisar do binário nem da rede.
         def build_from(dir:, url:, info: {})
-          path, lang, auto_generated = pick_subtitle(dir, info)
+          path, lang, auto_generated, text = pick_subtitle(dir, info)
           raise NoTranscript, "vídeo sem faixa de legenda disponível" if path.nil?
-
-          text = render(events_from(path))
           raise NoTranscript, "faixa de legenda veio vazia" if text.blank?
 
           {
@@ -288,42 +286,66 @@ module Fetcher
         #
         # Qualquer idioma serve — não há hardcode de língua alguma.
         #
-        # Devolve [path, lang, auto_generated] — o terceiro elemento indica a
-        # fonte (manual=false, auto=true) para que `build_from` preencha o
-        # metadata sem recontar.
+        # Prioridade pós-frente-D:
+        # 1) manual > auto
+        # 2) idioma: pt-BR > pt > en (inclui en-GB/en-US/en-orig) > qualquer outra
+        # 3) formato: json3 > vtt > srt
+        # Itera as candidatas ordenadas e elege a primeira cujo render produza
+        # texto não vazio (pula stubs vazios).
         FORMAT_WEIGHT = { "json3" => 1, "vtt" => 2, "srt" => 3 }.freeze
 
-        def pick_subtitle(dir, info)
+        def lang_priority(lang)
+          l = lang.to_s.strip
+          if l.casecmp("pt-br").zero?
+            0
+          elsif l.casecmp("pt").zero?
+            1
+          elsif l.match?(/\Aen(-|\z)/i)
+            2
+          else
+            3
+          end
+        end
+
+        def candidate_subtitles(dir, info)
           video_id = info["id"]
-          # disponiveis: lang => { ext => path }, json3 sobrescrevendo vtt/srt.
-          disponiveis = {}
-          FORMAT_WEIGHT.sort_by { |_, peso| peso }.each do |ext, peso|
+          manual = info["subtitles"] || {}
+          candidates = []
+
+          FORMAT_WEIGHT.each_key do |ext|
             Dir[File.join(dir, "*.#{ext}")].each do |p|
               lang = lang_of(p, video_id)
-              # Só atualiza se ainda não tem entrada OU se a entrada atual é
-              # de extensão pior (peso maior).
-              atual = disponiveis[lang]
-              if atual.nil? || peso < FORMAT_WEIGHT[atual.keys.first]
-                disponiveis[lang] = { ext => p }
-              end
+              is_manual = manual.key?(lang)
+              candidates << {
+                path:           p,
+                ext:            ext,
+                lang:           lang,
+                auto_generated: !is_manual,
+                sort_key: [
+                  is_manual ? 0 : 1,
+                  lang_priority(lang),
+                  FORMAT_WEIGHT[ext] || 99,
+                  lang.to_s.downcase
+                ]
+              }
             end
           end
-          return [nil, nil, nil] if disponiveis.empty?
 
-          manual = info["subtitles"] || {}
-          # 1) manual vence auto; 2) lexicográfico dentro de cada grupo.
-          sorted = disponiveis.keys.sort_by do |lang|
-            [manual.key?(lang) ? 0 : 1, lang]
+          candidates.sort_by { |c| c[:sort_key] }
+        end
+
+        def pick_subtitle(dir, info)
+          candidates = candidate_subtitles(dir, info)
+          return [nil, nil, nil, nil] if candidates.empty?
+
+          candidates.each do |cand|
+            text = render(events_from(cand[:path]))
+            return [cand[:path], cand[:lang], cand[:auto_generated], text] unless text.blank?
           end
 
-          lang = sorted.first
-          entry = disponiveis[lang]
-          # json3 > vtt > srt — pega a chave de menor peso.
-          path = entry.key?("json3") ? entry["json3"] :
-                 entry.key?("vtt") ? entry["vtt"] :
-                 entry["srt"]
-          auto_generated = !manual.key?(lang)
-          [path, lang, auto_generated]
+          # Todas vazias: devolve a primeira candidata com text vazio para build_from levantar NoTranscript
+          primeira = candidates.first
+          [primeira[:path], primeira[:lang], primeira[:auto_generated], ""]
         end
 
         # yt-dlp grava `<id>.<lang>.<ext>`. O lang é tudo entre o id e a

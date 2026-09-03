@@ -319,16 +319,16 @@ class Fetcher::Channels::YoutubeTest < ActiveSupport::TestCase
   end
 
   # ── RED CASE 3: duas legendas automaticas → escolha determinista ────────────
-  # Ordenacao lexicografica: "es" < "pt" (e < p).
+  # Ordenacao lexicografica dentro do mesmo grupo: "es" < "fr" (e < f).
   test "duas legendas automaticas: escolha determinista por ordem lexica" do
     Dir.mktmpdir("ytt-deterministic") do |dir|
-      info = INFO.merge("subtitles" => {}, "automatic_captions" => { "es" => [{}], "pt" => [{}] })
+      info = INFO.merge("subtitles" => {}, "automatic_captions" => { "es" => [{}], "fr" => [{}] })
       write_vtt(dir, info, "es")
-      write_vtt(dir, info, "pt")
+      write_vtt(dir, info, "fr")
 
       result = Fetcher::Channels::Youtube.build_from(dir: dir, url: "https://www.youtube.com/watch?v=X", info: info)
 
-      assert_equal "es", result[:metadata]["lang"], "lexicografico: es < pt"
+      assert_equal "es", result[:metadata]["lang"], "lexicografico: es < fr"
       assert_operator result[:content].length, :>, 0
     end
   end
