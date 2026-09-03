@@ -261,44 +261,38 @@ class Fetcher::Channels::YoutubeTest < ActiveSupport::TestCase
     assert_equal [], Fetcher::Channels::Youtube.search(query: "   ")
   end
 
-  # ── RED CASE 1: comando yt-dlp usa --sub-langs all em UMA unica execucao ────
-  # Intercepta a construcao do comando e exige --sub-langs all. O codigo
-  # anterior (2-pass com PREFERRED_LANGS) falha este teste — passa com
-  # PREFERRED_LANGS.join(",") no primeiro download, nao "all".
-  test "run usa --sub-langs all em unica execucao (sem 2-pass, sem PREFERRED_LANGS)" do
+  # ── Passes limitados: passe 1 lista preferida curta, passe 2 all se vazio ─────
+  test "run usa lista preferida curta no passe 1 e all no passe 2 quando passe 1 e vazio" do
     captured_commands = []
     ok = Struct.new(:success?, :exitstatus).new(true, 0)
     Fetcher::SessionCookies.stubs(:for).returns([[{ "name" => "SID", "value" => "v", "domain" => ".youtube.com" }], :jar])
 
     # Abre a moqueira da cookie jar para que `with_netscape_file` execute e
     # `verify_session!` veja um cookie de sessao.
-    Fetcher::CookieJar.stubs(:with_netscape_file).yields(Tempfile.create(["jar", ".txt"]).path).returns({"id" => "X", "title" => "T"})
+Fetcher::CookieJar.stubs(:with_netscape_file).yields(Tempfile.create(["jar", ".txt"]).path).returns({"id" => "X", "title" => "T"})
     Fetcher::CookieJar.stubs(:refresh_from_netscape!)
     Fetcher::CookieJar.stubs(:parse_netscape).returns([{ "name" => "SID" }])
 
-    Open3.expects(:capture3).with { |*args|
+    Open3.stubs(:capture3).with { |*args|
       captured_commands << args
       true
     }.returns(['{"id":"X","title":"T"}', "", ok])
 
-    # capture3 mock devolve info sem legendas — build_from levanta NoTranscript
-    # porque o dir esta vazio. O foco deste teste e o COMANDO emitido, nao o
-    # resultado do parse.
     assert_raises(Fetcher::Channels::Youtube::NoTranscript) do
       Fetcher::Channels::Youtube.call(url: "https://www.youtube.com/watch?v=X")
     end
 
-    # Deve ter exatamente uma chamada a capture3 (unico download)
-    assert_equal 1, captured_commands.length, "deve rodar yt-dlp uma unica vez, nao 2-pass"
+    assert_equal 2, captured_commands.length, "passe 1 vazio dispara passe 2 estendido"
 
-    cmd = captured_commands.first
-    assert_includes cmd, "--sub-langs"
-    idx = cmd.index("--sub-langs")
-    assert_equal "all", cmd[idx + 1], "deve passar --sub-langs all, nao PREFERRED_LANGS"
+    cmd1 = captured_commands.first
+    assert_includes cmd1, "--sub-langs"
+    idx1 = cmd1.index("--sub-langs")
+    assert_equal Fetcher::Channels::Youtube::PASSE_1_LANGS, cmd1[idx1 + 1], "passe 1 deve usar lista preferida curta"
 
-    # PREFERRED_LANGS nao deve existir mais
-    refute Fetcher::Channels::Youtube.const_defined?(:PREFERRED_LANGS),
-           "PREFERRED_LANGS deve ser removida completamente"
+    cmd2 = captured_commands[1]
+    assert_includes cmd2, "--sub-langs"
+    idx2 = cmd2.index("--sub-langs")
+    assert_equal "all", cmd2[idx2 + 1], "passe 2 deve usar all"
   end
 
   # ── RED CASE 2: idiomas arbitrarios sem hardcoded ────────────────────────────

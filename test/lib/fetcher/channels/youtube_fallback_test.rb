@@ -86,7 +86,74 @@ Dir.mktmpdir("fallback_d") do |dir|
 
 assert_equal "Spanish manual text", result[:content]
       assert_equal "es", result[:metadata]["lang"]
-      assert_equal false, result[:metadata]["auto_generated"]
+assert_equal false, result[:metadata]["auto_generated"]
+    end
+  end
+
+  # ── Novos testes: boundar download de legendas (429) e passes limitados ─────
+  test "all nunca de primeira: passe 1 usa lista curta preferida e nao chama all se ha legendas" do
+    Dir.mktmpdir("fallback_p1") do |dir|
+      chamadas_langs = []
+      Fetcher::Channels::Youtube.stubs(:download_subs).with do |d, _cookie, _url, langs,_timeout|
+        chamadas_langs << langs
+        File.write(File.join(d, "video123.pt-BR.json3"), JSON.generate(EVENTS))
+        INFO
+      end
+
+      info = Fetcher::Channels::Youtube.send(:run, "https://www.youtube.com/watch?v=video123", dir, "/fake/cookie")
+
+      assert_equal "pt-BR,pt,en,en-US,en-GB,en-orig,es,fr,de,it,ja", chamadas_langs.first
+      refute_equal "all", chamadas_langs.first
+      assert_equal 1, chamadas_langs.size
+      assert_equal "video123", info["id"]
+    end
+  end
+
+  test "tolerancia por faixa: 429 em uma faixa com outras validas nao aborta e elege legenda valida" do
+    Dir.mktmpdir("fallback_429") do |dir|
+      Fetcher::Channels::Youtube.stubs(:download_subs).with do |d, _cookie, _url, _langs, _timeout|
+        File.write(File.join(d, "video123.pt-BR.json3"), JSON.generate(EVENTS))
+        raise Fetcher::Channels::Youtube::YtdlpError.new(1, "Unable to download video subtitles for ab: HTTP Error 429 Too Many Requests")
+      end
+
+      info = Fetcher::Channels::Youtube.send(:run, "https://www.youtube.com/watch?v=video123", dir, "/fake/cookie")
+      result = Fetcher::Channels::Youtube.build_from(dir: dir, url: "https://www.youtube.com/watch?v=video123", info: info)
+
+      assert_equal "transcricao em portugues valida", result[:content]
+      assert_equal "pt-BR", result[:metadata]["lang"]
+end
+  end
+
+  test "passe 2 estendido com all chamado quando passe 1 e vazio" do
+    Dir.mktmpdir("fallback_p2") do |dir|
+      chamadas_langs = []
+      Fetcher::Channels::Youtube.stubs(:download_subs).with do |d, _cookie, _url, langs, _timeout|
+        chamadas_langs << langs
+        if langs == "all"
+          File.write(File.join(d, "video123.ja.vtt"), "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nJapanese text")
+        end
+        INFO
+      end
+
+      info = Fetcher::Channels::Youtube.send(:run, "https://www.youtube.com/watch?v=video123", dir, "/fake/cookie")
+      result = Fetcher::Channels::Youtube.build_from(dir:dir, url: "https://www.youtube.com/watch?v=video123", info: info)
+
+      assert_equal 2, chamadas_langs.size
+      assert_equal "all", chamadas_langs[1]
+      assert_equal "Japanese text", result[:content]
+      assert_equal "ja", result[:metadata]["lang"]
+    end
+  end
+
+  test "YtdlpError propagado quando nada foi baixado no disco" do
+    Dir.mktmpdir("fallback_nada") do |dir|
+      Fetcher::Channels::Youtube.stubs(:download_subs).raises(
+        Fetcher::Channels::Youtube::YtdlpError.new(1, "Unable to download video subtitles for ab: HTTP Error 429 Too Many Requests")
+      )
+
+      assert_raises(Fetcher::Channels::Youtube::YtdlpError) do
+        Fetcher::Channels::Youtube.send(:run, "https://www.youtube.com/watch?v=video123", dir, "/fake/cookie")
+      end
     end
   end
 end

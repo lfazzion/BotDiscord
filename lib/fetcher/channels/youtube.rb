@@ -54,8 +54,9 @@ module Fetcher
       # Mais apertado que os 5/min da casa: a plataforma conta requisição por
       # conta, e rajada é assinatura de bot. 2/min dá ~30s entre chamadas.
       MAX_PER_WINDOW = 2
-      COOKIE_DOMAIN  = "youtube.com"
+            COOKIE_DOMAIN  = "youtube.com"
       MAX_RESULTADOS = 25
+      PASSE_1_LANGS  = "pt-BR,pt,en,en-US,en-GB,en-orig,es,fr,de,it,ja"
       # Seleção de campos do yt-dlp: os mesmos dados úteis do info.json (14,6 MB
       # neste vídeo, quase tudo `automatic_captions`) em ~90 KB por stdout.
       INFO_TEMPLATE  = "%(.{id,title,channel,uploader,subtitles})j"
@@ -94,7 +95,8 @@ module Fetcher
 
         # Público de propósito: é onde mora a leitura do que o yt-dlp escreveu, e
         # é por aqui que o teste entra sem precisar do binário nem da rede.
-        def build_from(dir:, url:, info: {})
+                def build_from(dir:, url:, info: {})
+          info = {} if info.nil?
           path, lang, auto_generated, text = pick_subtitle(dir, info)
           raise NoTranscript, "vídeo sem faixa de legenda disponível" if path.nil?
           raise NoTranscript, "faixa de legenda veio vazia" if text.blank?
@@ -235,11 +237,47 @@ module Fetcher
         # simulação, e em simulação o yt-dlp imprime mas NÃO grava arquivo nenhum.
         # Medido com controle: sem a flag, 0 arquivos json3; com ela, 3.
         #
-        # Única execução: `--sub-langs all` baixa todas as faixas de uma só vez.
-        # O orçamento YTDLP_TIMEOUT (30s) inteiro vai para a única chamada.
-        # Timeout::Error vira NoTranscript.
+        # Dois passes limitados:
+        # Passe 1: lista preferida curta (11 línguas). Nunca all de primeira.
+        # Passe 2: estendido (all) SOMENTE se passe 1 não produziu legenda válida com conteúdo.
+        # Tolerância por faixa: falha em uma faixa (429, 403) não aborta o run se algo foi baixado.
+        # Timeout total compartilhado de 30s (YTDLP_TIMEOUT).
         def run(url, dir, cookie_path)
-          download_subs(dir, cookie_path, url, "all", YTDLP_TIMEOUT)
+          inicio = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+          info = exec_download_subs(dir, cookie_path, url, PASSE_1_LANGS, YTDLP_TIMEOUT)
+
+          unless tem_legenda_valida?(dir, info)
+            gasto = Process.clock_gettime(Process::CLOCK_MONOTONIC) - inicio
+            restante = YTDLP_TIMEOUT - gasto
+            if restante > 0
+              info2 = exec_download_subs(dir, cookie_path, url, "all", restante)
+              info = info2 if (info.nil? || info.empty?) && info2.present?
+            end
+          end
+
+info || { "id" => video_id_from(url) }
+        end
+
+        def exec_download_subs(dir, cookie_path, url, langs, timeout)
+          download_subs(dir, cookie_path, url, langs, timeout)
+rescue YtdlpError => e
+          # Falha de UMA faixa (429, 403, vazio) NUNCA aborta o run: pular e seguir;
+          # YtdlpError so se NADA foi baixado.
+          raise e unless any_subtitles?(dir)
+
+          { "id" => video_id_from(url) }
+        end
+
+        def any_subtitles?(dir)
+          FORMAT_WEIGHT.each_key.any? do |ext|
+            Dir[File.join(dir, "*.#{ext}")].any? { |p| File.size?(p).to_i > 0 }
+end
+        end
+
+        def tem_legenda_valida?(dir, info)
+          _path, _lang, _auto, text = pick_subtitle(dir, info || {})
+text.present?
         end
 
         # Uma chamada do yt-dlp para o `dir` informado. A escolha do budget
@@ -264,6 +302,10 @@ module Fetcher
           raise CookieJar::Expired, COOKIE_DOMAIN if sessao_rejeitada?(err)
 
           unless status.success?
+            if any_subtitles?(dir)
+              return (JSON.parse(out.to_s.lines.first.to_s) rescue { "id" => video_id_from(url) })
+            end
+
             linha = err.to_s.lines.last&.strip.to_s
             raise YtdlpError.new(status.exitstatus, linha)
           end
@@ -308,6 +350,7 @@ module Fetcher
         end
 
         def candidate_subtitles(dir, info)
+          info = {} if info.nil?
           video_id = info["id"]
           manual = info["subtitles"] || {}
           candidates = []
