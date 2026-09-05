@@ -203,11 +203,22 @@ class ConversationCompactor
     end
 
     def summarize_with_llm(conversation, transcript_text, window)
+      # Skill System v2 (Tarefa 8): instruções de compactação da skill ativa
+      # entram no user_template do prompt de resumo. Quando a coluna aponta
+      # para uma skill que sumiu do registry (drift YAML), a instrução é vazia
+      # — mesmo padrão silencioso do Rehydrator.
+      skill_definition = nil
+      if conversation.respond_to?(:active_skill_name) && conversation.active_skill_name.present?
+        skill_definition = Skills::Registry.fetch?(conversation.active_skill_name)
+      end
+      skill_instr = skill_definition&.compaction_instructions.to_s
+
       prompt = Llm::PromptLoader.load(
         "conversation_summary",
         transcript: transcript_text,
         shared: conversation.shared,
-        budget_tokens: budget_tokens(window)
+        budget_tokens: budget_tokens(window),
+        skill_instructions: skill_instr
       )
       elo = summary_link
       chat = RubyLLM.chat(model: summary_model_id, provider: summary_provider)
@@ -230,7 +241,11 @@ class ConversationCompactor
       chat.with_thinking(effort: elo.effort) if elo&.effort.present?
       chat.with_params(**elo.params) if elo&.params.present?
       chat.with_instructions(prompt[:system])
-      resposta = chat.ask(prompt[:user])
+      user_prompt = prompt[:user].to_s
+      if skill_instr.present? && !user_prompt.include?(skill_instr)
+        user_prompt = "#{user_prompt}\n\n#{skill_instr}"
+      end
+      resposta = chat.ask(user_prompt)
       resposta.respond_to?(:content) ? resposta.content.to_s : resposta.to_s
     end
 
