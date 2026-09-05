@@ -1,0 +1,32 @@
+version: 1
+name: private-thread-skill
+description: Skill com thread privada para teste
+system_prompt: Você está no modo PRIVATE-THREAD.
+explicit_triggers:
+  slash:
+    name: private
+    description: Ativa thread privada
+    input:
+      name: assunto
+      description: Assunto
+      required: false
+  text_commands:
+    - "!private"
+  exit_phrases:
+    - "sair"
+autonomous:
+  enabled: false
+tools:
+  allow: []
+  deny:
+    - "*"
+context:
+  max_rehydrated_messages: 50
+  prompt_fragment_max_chars: 3000
+cost:
+  selector_max_input_chars: 2000
+  selector_max_output_tokens: 32
+discord:
+  create_thread: true
+  thread_visibility: private
+  thread_name: "Privado: %s"

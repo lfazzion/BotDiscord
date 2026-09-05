@@ -1,0 +1,49 @@
+version: 1
+name: second-skill
+description: >-
+  Segunda skill de demonstração. Serve para comprovar que o registro
+  descobre novas skills sem editar roteadores ou chains.
+explicit_triggers:
+  slash:
+    name: second
+    description: Ativa a skill de demonstração
+    input:
+      name: assunto
+      description: Assunto a examinar
+      required: false
+  text_commands:
+    - "!second"
+  phrases:
+    - "quero fazer o second"
+    - "ativa segunda skill"
+  exit_phrases:
+    - "sair do second"
+    - "parar segunda skill"
+autonomous:
+  enabled: false
+  candidate_hints: []
+  positive_examples: []
+  negative_examples: []
+system_prompt: |
+  Você está no modo SECOND-SKILL.
+  Esta é uma skill de demonstração para validar o registro declarativo.
+  Não improvise comportamento — apenas confirme que a skill foi ativada.
+tools:
+  allow: []
+  deny:
+    - "*"
+context:
+  max_rehydrated_messages: 50
+  prompt_fragment_max_chars: 3000
+  compaction_instructions: >-
+    Preserve o histórico da skill de demonstração.
+    Mantenha as decisões já tomadas.
+cost:
+  selector_max_input_chars: 2000
+  selector_max_output_tokens: 32
+  selector_calls_per_turn: 1
+  max_rounds: null
+discord:
+  create_thread: true
+  thread_visibility: public
+  thread_name: "Skill: %s"

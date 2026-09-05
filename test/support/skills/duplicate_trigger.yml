@@ -1,0 +1,17 @@
+version: 1
+name: no-trigger-conflict
+description: Skill sem conflitos de trigger
+system_prompt: prompt
+explicit_triggers:
+  slash:
+    name: unique-slash
+    description: Slash único
+    input: { name: t, description: Topic, required: false }
+  text_commands:
+    - "!unique-cmd"
+  phrases: []
+autonomous: { enabled: false, candidate_hints: [] }
+tools: { allow: [], deny: ["*"] }
+context: { max_rehydrated_messages: 10, prompt_fragment_max_chars: 1000 }
+cost: { selector_max_input_chars: 100, selector_max_output_tokens: 10 }
+discord: {}

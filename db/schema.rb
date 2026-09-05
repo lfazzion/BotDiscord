@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_30_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_04_120000) do
   create_table "browser_session_cookies", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "domain", null: false
@@ -34,6 +34,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_30_000002) do
 
   create_table "conversations", force: :cascade do |t|
     t.boolean "active", default: true, null: false
+    t.string "active_skill_name"
+    t.string "offered_skill_name"
+    t.datetime "offered_at"
     t.datetime "created_at", null: false
     t.string "discord_channel_id", null: false
     t.string "discord_user_id"
@@ -45,11 +48,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_30_000002) do
     t.datetime "summary_failed_at"
     t.string "title"
     t.datetime "updated_at", null: false
+    # R5a (04/09/2026): conteúdo original da ideia enviada pelo usuário quando
+    # a skill foi detectada automaticamente. Usado para repassar a ideia real
+    # ao primeiro turno da skill, em vez de passar a resposta sim/continuar.
+    t.text "offered_content"
     # F5a (30/08/2026): teto de 5 buscas web por conversa ativa do Discord
     # (plano-fase2 §D4). Toda conversa NOVA começa com 0 (default da migration);
     # `/new` zera por construção porque é outra row. NÃO criamos índice novo —
     # o gate usa o índice parcial único existente e o incremento vai por PK.
     t.integer "web_search_count", default: 0, null: false
+    t.index ["active_skill_name"], name: "index_conversations_on_active_skill_name", where: "active_skill_name IS NOT NULL"
     t.index ["scope", "last_active_at"], name: "index_conversations_on_scope_and_last_active_at"
     t.index ["scope"], name: "index_conversations_on_active_scope", unique: true, where: "active = 1"
   end

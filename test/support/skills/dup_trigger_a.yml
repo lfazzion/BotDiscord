@@ -1,0 +1,17 @@
+version: 1
+name: no-trigger-dup-test
+description: Skill sem triggers duplicados
+system_prompt: prompt a
+explicit_triggers:
+  slash:
+    name: other-a
+    description: Outro slash
+    input: { name: t, description: Topic, required: false }
+  text_commands:
+    - "!unique-cmd-a"
+  phrases: []
+autonomous: { enabled: false, candidate_hints: [] }
+tools: { allow: [], deny: ["*"] }
+context: { max_rehydrated_messages: 10, prompt_fragment_max_chars: 1000 }
+cost: { selector_max_input_chars: 100, selector_max_output_tokens: 10 }
+discord: {}

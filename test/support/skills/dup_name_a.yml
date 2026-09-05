@@ -1,0 +1,10 @@
+version: 1
+name: my-dup
+description: Primeira skill duplicada
+system_prompt: prompt
+explicit_triggers: {}
+autonomous: {}
+tools: { allow: [], deny: ["*"] }
+context: { max_rehydrated_messages: 10, prompt_fragment_max_chars: 1000 }
+cost: { selector_max_input_chars: 100, selector_max_output_tokens: 10 }
+discord: {}

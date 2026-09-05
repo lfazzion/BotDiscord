@@ -1,0 +1,11 @@
+version: 1
+name: solo-test
+description: Fixture isolada para teste de rejeição de chave desconhecida
+system_prompt: outro prompt
+explicit_triggers: {}
+autonomous: {}
+tools: { allow: [], deny: ["*"] }
+context: { max_rehydrated_messages: 10, prompt_fragment_max_chars: 1000 }
+cost: { selector_max_input_chars: 100, selector_max_output_tokens: 10 }
+discord: {}
+some_unknown_key: value
