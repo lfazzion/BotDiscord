@@ -5,7 +5,20 @@ require_relative '../../app/jobs/sqlite_backup_job'
 
 class SqliteBackupJobTest < ActiveSupport::TestCase
   test 'perform chama bin/backup para os três bancos com sucesso' do
-    SqliteBackupJob.any_instance.stubs(:system).returns(true)
+    expected_script = Rails.root.join("bin/backup").to_s
+    expected_dir = Rails.root.join("storage/backups").to_s
+    targets = SqliteBackupJob::BACKUP_TARGETS
+    targets.each do |t|
+      SqliteBackupJob.any_instance.expects(:system).with(
+        "/bin/bash",
+        expected_script,
+        Rails.root.join(t[:path]).to_s,
+        expected_dir,
+        t[:name],
+        "7"
+      ).at_least_once.returns(true)
+    end
+    ENV.delete('BACKUP_RETENTION_DAYS')
     job = SqliteBackupJob.new
     job.perform
   end
