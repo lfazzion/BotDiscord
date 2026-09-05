@@ -40,7 +40,7 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
     scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
 
     ChatSessionManager.expects(:ask)
-                      .with(scope: scope, content: "pergunta", user_id: "123", username: "joao")
+                      .with(scope: scope, content: "pergunta", user_id: "123", username: "joao", requested_skill: nil)
                       .returns("resposta do bot")
 
     event.expects(:respond).with("resposta do bot")
@@ -55,7 +55,7 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
     # esgotar ou estourar um RateLimitError durante ask, o bot captura a exceção
     # (StandardError) e envia a mensagem amigável de erro para o usuário sem derrubar o processo.
     ChatSessionManager.expects(:ask)
-                      .with(scope: scope, content: "pergunta", user_id: "123", username: "joao")
+                      .with(scope: scope, content: "pergunta", user_id: "123", username: "joao", requested_skill: nil)
                       .raises(RubyLLM::RateLimitError, "rate limit")
 
     event.expects(:respond).with("⚠️ Erro ao processar. Tente novamente.")
@@ -569,7 +569,7 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
 
     AttachmentProcessor.expects(:process).never
     ChatSessionManager.expects(:ask)
-                      .with(scope: scope, content: "por que isso da erro?", user_id: "123", username: "joao")
+.with(scope: scope, content: "por que isso da erro?", user_id: "123", username: "joao", requested_skill: nil)
                       .returns("resposta normal")
 
     event.expects(:respond).with("resposta normal")
@@ -614,7 +614,7 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
       AttachmentProcessor::Result.new(success: true, content: frame_content, truncated: false, filename: "doc.txt")
     )
     ChatSessionManager.expects(:ask)
-                      .with(scope: scope, content: frame_content, user_id: "123", username: "joao")
+                      .with(scope: scope, content: frame_content, user_id: "123", username: "joao", requested_skill: nil)
                       .returns("Resposta da LLM sobre o arquivo")
 
     event.expects(:respond).with("Resposta da LLM sobre o arquivo")
@@ -633,7 +633,7 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
                                       truncated_reason: :chars, filename: "grande.txt")
     )
     ChatSessionManager.expects(:ask)
-                      .with(scope: scope, content: frame_content, user_id: "123", username: "joao")
+                      .with(scope: scope, content: frame_content, user_id: "123", username: "joao", requested_skill: nil)
                       .returns("Analise feita")
 
     event.expects(:respond).with("Analise feita\n\n⚠️ *(O arquivo foi truncado em 30000 caracteres.)*")
@@ -654,7 +654,7 @@ class DiscordBotServiceTest < ActiveSupport::TestCase
                                       truncated_reason: :pages, filename: "slides.pdf")
     )
     ChatSessionManager.expects(:ask)
-                      .with(scope: scope, content: frame_content, user_id: "123", username: "joao")
+                      .with(scope: scope, content: frame_content, user_id: "123", username: "joao", requested_skill: nil)
                       .returns("A conclusão está na parte que não li")
 
     event.expects(:respond).with("A conclusão está na parte que não li\n\n⚠️ *(O arquivo é longo demais e foi lido parcialmente.)*")

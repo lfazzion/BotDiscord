@@ -6,9 +6,10 @@ module Llm
     PARTIALS_DIR = PROMPTS_DIR.join('partials')
 
     class PromptNotFoundError < ArgumentError; end
+    class SkillNotFoundError < ArgumentError; end
 
     class << self
-      def load(name, **locals)
+      def load(name, skill: nil, **locals)
         file_path = PROMPTS_DIR.join("system/#{name}.yml")
         raise PromptNotFoundError, "Prompt '#{name}' não encontrado em #{file_path}" unless file_path.exist?
 
@@ -17,6 +18,21 @@ module Llm
 
         system_text = render_system(yaml['system'])
         user_text = render_template(yaml['user_template'], **locals)
+
+        # Composição do prompt: anexa fragmento da skill após as regras globais.
+        # Lane B (04/09/2026): se `skill` é uma String (fragmento completo),
+        # usamos direto; se for um nome/símbolo, levantamos erro. Isso evita que
+        # o caminho "normal" do chat (que já passa o prompt pronto via
+        # ConversationRehydrator) cause duplicação — antes, a string era
+        # interpolada tanto no cabeçalho #{skill} quanto no fragmento.
+        if skill.present?
+          if skill.is_a?(String)
+            system_text = "#{system_text}\n\n## SKILL\n#{skill}"
+          else
+            skill_fragment = render_skill_fragment(skill)
+            system_text = "#{system_text}\n\n## SKILL: #{skill}\n#{skill_fragment}"
+          end
+        end
 
         {
           system: system_text.strip,
@@ -51,6 +67,17 @@ module Llm
         b = binding
         locals.each { |k, v| b.local_variable_set(k, v) }
         ERB.new(template).result(b)
+      end
+
+      def render_skill_fragment(skill)
+        case skill
+        when Symbol
+          raise SkillNotFoundError, "Skill '#{skill}' não encontrada"
+        when String
+          skill
+        else
+          raise SkillNotFoundError, "Formato de skill inválido: #{skill.inspect}"
+        end
       end
     end
   end

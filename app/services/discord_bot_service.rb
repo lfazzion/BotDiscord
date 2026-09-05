@@ -3,6 +3,7 @@
 require "discordrb"
 require "concurrent"
 require "tempfile"
+require_relative "discord/thread_event_proxy"
 
 class DiscordBotService
   MAX_DISCORD_MESSAGE = 2000
@@ -135,7 +136,26 @@ class DiscordBotService
             command[:takes_confirm]
         end
       end
-      Rails.logger.info "[DiscordBotService] Slash commands registrados " \
+
+      # Register skill slash commands from registry
+      begin
+        registry = Skills::Registry.new
+        registry.slash_definitions.each do |skill_cmd|
+          bot.register_application_command(skill_cmd[:name], skill_cmd[:description],
+                                           server_id: guild_id) do |options|
+            if skill_cmd[:input_required]
+              options.string(skill_cmd[:input_name], skill_cmd[:input_description], required: true)
+            else
+              options.string(skill_cmd[:input_name], skill_cmd[:input_description], required: false)
+            end
+          end
+        end
+        Rails.logger.info "[DiscordBotService] Skill slash commands registered (#{guild_id ? "guild #{guild_id}" : 'global'})"
+      rescue StandardError => e
+        Rails.logger.warn "[DiscordBotService] Skill slash command registration failed (#{e.class.name}: #{e.message})"
+      end
+
+      Rails.logger.info "[DiscordBotService] Slash commands registered " \
                         "(#{guild_id ? "guild #{guild_id}" : 'global'})"
     rescue StandardError => e
       Rails.logger.warn "[DiscordBotService] Registro de slash falhou (#{e.class.name}: " \
@@ -148,6 +168,58 @@ class DiscordBotService
           handle_slash_command(event, definition)
         end
       end
+
+      # Register skill command handlers
+      begin
+        registry = Skills::Registry.new
+        registry.slash_definitions.each do |skill_cmd|
+          bot.application_command(skill_cmd[:name].to_sym) do |event|
+            handle_skill_slash_command(event, skill_cmd)
+          end
+        end
+        Rails.logger.info "[DiscordBotService] Skill command handlers attached"
+      rescue StandardError => e
+        Rails.logger.warn "[DiscordBotService] Skill command handler attachment failed (#{e.class.name}: #{e.message})"
+      end
+    end
+
+    def handle_skill_slash_command(event, skill_definition)
+      event.defer(ephemeral: false)
+      open_id = effective_open_channel_id(event.channel)
+      user_id = event.user.id.to_s
+      scope = Discord::SessionScope.for(user_id: user_id,
+                                        channel_id: event.channel.id.to_s,
+                                        open_channel_id: open_id)
+      input_value = event.options[skill_definition[:input_name]] || ""
+      full_content = "/#{skill_definition[:name]} #{input_value}".strip
+      entrypoint = Discord::SkillEntrypoint.evaluate(event, scope, full_content)
+      scope = entrypoint[:scope]
+      thread_id = entrypoint[:thread_id]
+
+      if thread_id.present? && thread_id.to_s != event.channel.id.to_s
+        thread_event = Discord::ThreadEventProxy.new(event, thread_id.to_i)
+        event = thread_event
+        scope = Discord::SessionScope.for(
+          user_id: user_id, channel_id: thread_id,
+          open_channel_id: open_id
+        )
+      end
+
+      if entrypoint[:response].present?
+        event.respond(entrypoint[:response])
+        return
+      end
+
+      respond_deferred(event, ChatSessionManager.ask(
+        scope: scope,
+        content: entrypoint[:content] || input_value,
+        user_id: user_id,
+        username: display_name(event),
+        requested_skill: entrypoint[:skill_name]
+      ))
+    rescue StandardError => e
+      Rails.logger.error "[DiscordBotService] Skill slash /#{skill_definition[:name]} falhou: #{e.message}"
+      respond_deferred(event, "⚠️ Erro ao processar o comando.")
     end
 
     # `defer` reconhece a interaction com uma chamada HTTP simples, sem tocar no mutex
@@ -186,6 +258,51 @@ class DiscordBotService
       end
 
       attachments = event.message.respond_to?(:attachments) ? Array(event.message.attachments) : []
+
+      # D (Lane D): entrypoint genérico de skill. Avalia SEH antes de processar
+      # anexo ou comando de texto — é leitura barata e decide o scope que será
+      # usado em todos os caminhos abaixo. Nenhuma ramificação nominal por skill.
+      entrypoint = Discord::SkillEntrypoint.evaluate(event, scope, content)
+      scope = entrypoint[:scope]
+      requested_skill = entrypoint[:skill_name]
+      # R6: entrypoint devolve o conteúdo original (ideia) em vez de "sim"/"continua";
+      # o bot deve passar esse valor ao ask para o primeiro turno receber a ideia.
+      content = entrypoint[:content] if entrypoint[:content].present?
+
+      # Se o entrypoint já respondeu (erro de permissão na thread), devolve e
+      # não entra no fluxo normal de ask.
+      if entrypoint[:response].present?
+        event.respond(entrypoint[:response])
+        return
+      end
+
+      # R9-Item1: exit phrases tratadas no mesmo reset de /new.
+      # Se o usuário disse uma frase de saída, encerra a conversa ativa.
+      if requested_skill.present?
+        registry = Skills::Registry.new
+        definition = registry.fetch?(requested_skill)
+        if definition&.exit_phrases&.any? { |p| content.to_s.downcase.include?(p.to_s.downcase) }
+          ChatSessionManager.reset!(scope)
+          event.respond("👋 Conversa encerrada.")
+          return
+        end
+      end
+
+      # Se foi detectada uma skill e foi criada/thread, responde na thread.
+      # O scope já foi atualizado pelo entrypoint; mantemos o event original
+      # mas precisamos redirecionar a resposta para o canal da thread.
+      thread_id = entrypoint[:thread_id]
+      if thread_id.present? && thread_id.to_s != channel_id
+        # O scope já aponta para a thread; o answer usará o escopo correto
+        # para o ChatSessionManager. Para responder NA thread, criamos um
+        # proxy simples do event com o channel_id da thread.
+        thread_event = Discord::ThreadEventProxy.new(event, thread_id.to_i)
+        event = thread_event
+        scope = Discord::SessionScope.for(
+          user_id: user_id, channel_id: thread_id,
+          open_channel_id: open_id
+        )
+      end
 
       # B4 (revisão Opus): o gate é sobre anexos SUPORTADOS, não sobre qualquer
       # anexo. Um print.png + pergunta não pode virar "Formato não suportado"
@@ -246,7 +363,7 @@ class DiscordBotService
       end
 
       answer(event, scope, content, user_id, username, truncated: truncated,
-             truncated_reason: truncated_reason)
+             truncated_reason: truncated_reason, requested_skill: requested_skill)
     rescue StandardError => e
       # #4 (2ª rodada de revisão): rede final do handle_message. O filtro de
       # suportados (File.extname acima) roda FORA do begin do process — um
@@ -272,7 +389,7 @@ class DiscordBotService
 
     private
 
-    def answer(event, scope, content, user_id, username, truncated: false, truncated_reason: nil)
+    def answer(event, scope, content, user_id, username, truncated: false, truncated_reason: nil, requested_skill: nil)
       typing_running = Concurrent::AtomicBoolean.new(true)
       typing_thread = Thread.new do
         while typing_running.true?
@@ -283,7 +400,7 @@ class DiscordBotService
 
       begin
         texto = ChatSessionManager.ask(scope: scope, content: content, user_id: user_id,
-                                       username: username)
+                                       username: username, requested_skill: requested_skill)
         texto = truncation_notice(texto, truncated_reason) if truncated
         attachment = ResponseAttachmentBuilder.build(texto)
 

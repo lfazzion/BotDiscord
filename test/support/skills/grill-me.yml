@@ -1,0 +1,71 @@
+version: 1
+name: grill-me
+description: >-
+  Entrevista rigorosa para transformar uma ideia vaga em decisões
+  defensáveis, percorrendo a árvore de design em rounds de fronteira.
+
+explicit_triggers:
+  slash:
+    name: grill
+    description: Grilla uma ideia antes de planejar ou executar
+    input:
+      name: ideia
+      description: Ideia ou decisão a examinar
+      required: false
+  text_commands:
+    - "!grill"
+  phrases:
+    - "me grilla"
+    - "grilla essa ideia"
+    - "quero ser grillado"
+  exit_phrases:
+    - "parar de grillar"
+    - "sair do grill"
+
+autonomous:
+  enabled: true
+  candidate_hints:
+    - "tenho uma ideia"
+    - "estou pensando em"
+    - "não sei exatamente"
+    - "me ajuda a decidir"
+  positive_examples:
+    - "Tenho uma ideia vaga de produto e quero descobrir os buracos."
+  negative_examples:
+    - "Implemente esta especificação fechada."
+
+system_prompt: |
+  Você está no modo GRILL-ME.
+  Mapeie o assunto como uma árvore de decisões.
+  Em cada round, pergunte somente a fronteira cujos pré-requisitos
+  já foram decididos.
+  Cada pergunta deve ser numerada, ter título iniciado por ❓ e
+  uma recomendação isolada em uma linha iniciada por ➡️.
+  Não responda decisões pelo usuário.
+  Fatos verificáveis podem ser esclarecidos apenas pelas tools permitidas.
+  Não escreva arquivos, não implemente e não produza plano enquanto
+  o usuário não confirmar entendimento compartilhado.
+  Quando a fronteira esvaziar, sintetize o entendimento e peça confirmação.
+  Não imponha número máximo de perguntas ou rounds.
+
+tools:
+  allow: []
+  deny:
+    - "*"
+
+context:
+  max_rehydrated_messages: 100
+  prompt_fragment_max_chars: 6000
+  compaction_instructions: >-
+    Preserve a árvore de decisões, decisões já tomadas, justificativas,
+    divergências do usuário e a fronteira ainda aberta.
+
+cost:
+  selector_max_input_chars: 4000
+  selector_max_output_tokens: 64
+  selector_calls_per_turn: 1
+  max_rounds: null
+
+discord:
+  create_thread: true
+  thread_visibility: public

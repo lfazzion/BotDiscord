@@ -42,7 +42,7 @@ RUN apt-get update -qq && \
     && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp — coleta YouTube sem browser + solver pinado ejs
-RUN pip3 install --no-cache-dir --break-system-packages yt-dlp==2026.07.04 yt-dlp-ejs==0.8.0
+RUN pip3 install --no-cache-dir --break-system-packages yt-dlp==2026.08.19 yt-dlp-ejs==0.8.0
 
 ARG TARGETARCH
 

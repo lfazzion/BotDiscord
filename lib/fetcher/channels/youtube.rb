@@ -54,8 +54,9 @@ module Fetcher
       # Mais apertado que os 5/min da casa: a plataforma conta requisição por
       # conta, e rajada é assinatura de bot. 2/min dá ~30s entre chamadas.
       MAX_PER_WINDOW = 2
-      COOKIE_DOMAIN  = "youtube.com"
+            COOKIE_DOMAIN  = "youtube.com"
       MAX_RESULTADOS = 25
+      PASSE_1_LANGS  = "pt-BR,pt,en,en-US,en-GB,en-orig,es,fr,de,it,ja"
       # Seleção de campos do yt-dlp: os mesmos dados úteis do info.json (14,6 MB
       # neste vídeo, quase tudo `automatic_captions`) em ~90 KB por stdout.
       INFO_TEMPLATE  = "%(.{id,title,channel,uploader,subtitles})j"
@@ -94,11 +95,10 @@ module Fetcher
 
         # Público de propósito: é onde mora a leitura do que o yt-dlp escreveu, e
         # é por aqui que o teste entra sem precisar do binário nem da rede.
-        def build_from(dir:, url:, info: {})
-          path, lang, auto_generated = pick_subtitle(dir, info)
+                def build_from(dir:, url:, info: {})
+          info = {} if info.nil?
+          path, lang, auto_generated, text = pick_subtitle(dir, info)
           raise NoTranscript, "vídeo sem faixa de legenda disponível" if path.nil?
-
-          text = render(events_from(path))
           raise NoTranscript, "faixa de legenda veio vazia" if text.blank?
 
           {
@@ -237,11 +237,47 @@ module Fetcher
         # simulação, e em simulação o yt-dlp imprime mas NÃO grava arquivo nenhum.
         # Medido com controle: sem a flag, 0 arquivos json3; com ela, 3.
         #
-        # Única execução: `--sub-langs all` baixa todas as faixas de uma só vez.
-        # O orçamento YTDLP_TIMEOUT (30s) inteiro vai para a única chamada.
-        # Timeout::Error vira NoTranscript.
+        # Dois passes limitados:
+        # Passe 1: lista preferida curta (11 línguas). Nunca all de primeira.
+        # Passe 2: estendido (all) SOMENTE se passe 1 não produziu legenda válida com conteúdo.
+        # Tolerância por faixa: falha em uma faixa (429, 403) não aborta o run se algo foi baixado.
+        # Timeout total compartilhado de 30s (YTDLP_TIMEOUT).
         def run(url, dir, cookie_path)
-          download_subs(dir, cookie_path, url, "all", YTDLP_TIMEOUT)
+          inicio = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+          info = exec_download_subs(dir, cookie_path, url, PASSE_1_LANGS, YTDLP_TIMEOUT)
+
+          unless tem_legenda_valida?(dir, info)
+            gasto = Process.clock_gettime(Process::CLOCK_MONOTONIC) - inicio
+            restante = YTDLP_TIMEOUT - gasto
+            if restante > 0
+              info2 = exec_download_subs(dir, cookie_path, url, "all", restante)
+              info = info2 if (info.nil? || info.empty?) && info2.present?
+            end
+          end
+
+info || { "id" => video_id_from(url) }
+        end
+
+        def exec_download_subs(dir, cookie_path, url, langs, timeout)
+          download_subs(dir, cookie_path, url, langs, timeout)
+rescue YtdlpError => e
+          # Falha de UMA faixa (429, 403, vazio) NUNCA aborta o run: pular e seguir;
+          # YtdlpError so se NADA foi baixado.
+          raise e unless any_subtitles?(dir)
+
+          { "id" => video_id_from(url) }
+        end
+
+        def any_subtitles?(dir)
+          FORMAT_WEIGHT.each_key.any? do |ext|
+            Dir[File.join(dir, "*.#{ext}")].any? { |p| File.size?(p).to_i > 0 }
+end
+        end
+
+        def tem_legenda_valida?(dir, info)
+          _path, _lang, _auto, text = pick_subtitle(dir, info || {})
+text.present?
         end
 
         # Uma chamada do yt-dlp para o `dir` informado. A escolha do budget
@@ -266,6 +302,10 @@ module Fetcher
           raise CookieJar::Expired, COOKIE_DOMAIN if sessao_rejeitada?(err)
 
           unless status.success?
+            if any_subtitles?(dir)
+              return (JSON.parse(out.to_s.lines.first.to_s) rescue { "id" => video_id_from(url) })
+            end
+
             linha = err.to_s.lines.last&.strip.to_s
             raise YtdlpError.new(status.exitstatus, linha)
           end
@@ -288,42 +328,67 @@ module Fetcher
         #
         # Qualquer idioma serve — não há hardcode de língua alguma.
         #
-        # Devolve [path, lang, auto_generated] — o terceiro elemento indica a
-        # fonte (manual=false, auto=true) para que `build_from` preencha o
-        # metadata sem recontar.
+        # Prioridade pós-frente-D:
+        # 1) manual > auto
+        # 2) idioma: pt-BR > pt > en (inclui en-GB/en-US/en-orig) > qualquer outra
+        # 3) formato: json3 > vtt > srt
+        # Itera as candidatas ordenadas e elege a primeira cujo render produza
+        # texto não vazio (pula stubs vazios).
         FORMAT_WEIGHT = { "json3" => 1, "vtt" => 2, "srt" => 3 }.freeze
 
-        def pick_subtitle(dir, info)
+        def lang_priority(lang)
+          l = lang.to_s.strip
+          if l.casecmp("pt-br").zero?
+            0
+          elsif l.casecmp("pt").zero?
+            1
+          elsif l.match?(/\Aen(-|\z)/i)
+            2
+          else
+            3
+          end
+        end
+
+        def candidate_subtitles(dir, info)
+          info = {} if info.nil?
           video_id = info["id"]
-          # disponiveis: lang => { ext => path }, json3 sobrescrevendo vtt/srt.
-          disponiveis = {}
-          FORMAT_WEIGHT.sort_by { |_, peso| peso }.each do |ext, peso|
+          manual = info["subtitles"] || {}
+          candidates = []
+
+          FORMAT_WEIGHT.each_key do |ext|
             Dir[File.join(dir, "*.#{ext}")].each do |p|
               lang = lang_of(p, video_id)
-              # Só atualiza se ainda não tem entrada OU se a entrada atual é
-              # de extensão pior (peso maior).
-              atual = disponiveis[lang]
-              if atual.nil? || peso < FORMAT_WEIGHT[atual.keys.first]
-                disponiveis[lang] = { ext => p }
-              end
+              is_manual = manual.key?(lang)
+              candidates << {
+                path:           p,
+                ext:            ext,
+                lang:           lang,
+                auto_generated: !is_manual,
+                sort_key: [
+                  is_manual ? 0 : 1,
+                  lang_priority(lang),
+                  FORMAT_WEIGHT[ext] || 99,
+                  lang.to_s.downcase
+                ]
+              }
             end
           end
-          return [nil, nil, nil] if disponiveis.empty?
 
-          manual = info["subtitles"] || {}
-          # 1) manual vence auto; 2) lexicográfico dentro de cada grupo.
-          sorted = disponiveis.keys.sort_by do |lang|
-            [manual.key?(lang) ? 0 : 1, lang]
+          candidates.sort_by { |c| c[:sort_key] }
+        end
+
+        def pick_subtitle(dir, info)
+          candidates = candidate_subtitles(dir, info)
+          return [nil, nil, nil, nil] if candidates.empty?
+
+          candidates.each do |cand|
+            text = render(events_from(cand[:path]))
+            return [cand[:path], cand[:lang], cand[:auto_generated], text] unless text.blank?
           end
 
-          lang = sorted.first
-          entry = disponiveis[lang]
-          # json3 > vtt > srt — pega a chave de menor peso.
-          path = entry.key?("json3") ? entry["json3"] :
-                 entry.key?("vtt") ? entry["vtt"] :
-                 entry["srt"]
-          auto_generated = !manual.key?(lang)
-          [path, lang, auto_generated]
+          # Todas vazias: devolve a primeira candidata com text vazio para build_from levantar NoTranscript
+          primeira = candidates.first
+          [primeira[:path], primeira[:lang], primeira[:auto_generated], ""]
         end
 
         # yt-dlp grava `<id>.<lang>.<ext>`. O lang é tudo entre o id e a

@@ -559,5 +559,186 @@ class ChatSessionManagerTest < ActiveSupport::TestCase
     assert_not_nil nova, "deve existir conversa ativa após ask"
     assert_not_equal antiga.id, nova.id, "deve ser uma row nova, não a antiga reaberta"
   end
-end
 
+  # ===========================================================================
+  # Tarefa 7 — ChatSessionManager (Skill System v2)
+  # ===========================================================================
+
+  def grill_definition
+    Skills::Definition.new(
+      name: "grill-me",
+      description: "grill",
+      system_prompt: "PROTOCOLO_GRILL_FRAGMENT",
+      explicit_triggers: {},
+      autonomous: {},
+      tools: { allow: [], deny: ["*"] },
+      context: { max_rehydrated_messages: 100, prompt_fragment_max_chars: 6000,
+                 compaction_instructions: "PRESERVA_GRILL" },
+      cost: {},
+      discord: {}
+    )
+  end
+
+  class StubToolPolicy
+    attr_reader :allowed_tools
+    def initialize(definition:, base_tools:)
+      @definition = definition
+      @base_tools = base_tools
+      @allowed_tools = compute_allowed
+    end
+
+    private
+
+    def compute_allowed
+      return @base_tools.dup if @definition.nil?
+      allow = @definition.tool_ids
+      deny = @definition.deny_ids
+      @definition.deny_all? ? [] :
+        @base_tools.select do |tool|
+          id = tool.name.split("::").last.gsub(/Tool\z/, "").downcase
+          (allow.empty? || allow.any? { |a| a.to_s.downcase.include?(id) || id.include?(a.to_s.downcase) }) &&
+            deny.none? { |d| d.to_s.downcase.include?(id) || id.include?(d.to_s.downcase) }
+        end
+    end
+  end
+
+  def stub_tool_policy_lookup(policy_double)
+    ChatSessionManager.stubs(:build_tool_policy).returns(policy_double)
+  end
+
+  test "T7: ask aceita o kwarg requested_skill e o persiste na conversa" do
+    grill = grill_definition
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    Skills::Registry.stubs(:fetch?).with("grill-me").returns(grill)
+    policy = stub("tool_policy", allowed_tools: [])
+    stub_tool_policy_lookup(policy)
+    ConversationCompactor.stubs(:needs_compaction?).returns(false)
+    chat = stub_chat("ok")
+
+    ChatSessionManager.ask(scope: @scope, content: "ideia vaga",
+                           user_id: "101", username: "joao",
+                           requested_skill: "grill-me")
+
+    conv = Conversation.active_for(@scope.key)
+    assert_equal "grill-me", conv.active_skill_name
+  end
+
+  test "T7: grill anexa zero tools (deny: [\"*\"])" do
+    grill = grill_definition
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    Skills::Registry.stubs(:fetch?).with("grill-me").returns(grill)
+    ConversationCompactor.stubs(:needs_compaction?).returns(false)
+    chat = stub_chat("ok")
+    chat.expects(:with_tool).never
+    stub_tool_policy_lookup(stub("p", allowed_tools: []))
+
+    ChatSessionManager.ask(scope: @scope, content: "ideia",
+                           user_id: "101", username: "joao",
+                           requested_skill: "grill-me")
+  end
+
+  test "T7: resposta em branco não deixa modo parcial" do
+    grill = grill_definition
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    Skills::Registry.stubs(:fetch?).with("grill-me").returns(grill)
+    stub_tool_policy_lookup(stub("p", allowed_tools: []))
+    ConversationCompactor.stubs(:needs_compaction?).returns(false)
+    stub_chat("")
+
+    res = ChatSessionManager.ask(scope: @scope, content: "ideia vazia",
+                                 user_id: "101", username: "joao",
+                                 requested_skill: "grill-me")
+    assert_equal ChatSessionManager::BLANK_RESPONSE_WARNING, res
+
+    conv = Conversation.active_for(@scope.key)
+    assert_nil conv&.active_skill_name
+    assert_equal 0, conv.chat_messages.count
+  end
+
+  test "R7-Item5: exceção no primeiro turno restaura skill anterior" do
+    conv = Conversation.open_for(scope: @scope.key, channel_id: "202", user_id: "101")
+
+    grill = grill_definition
+    second_def = Skills::Registry.new.fetch?("second-skill")
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    Skills::Registry.stubs(:fetch?).with("grill-me").returns(grill)
+    Skills::Registry.stubs(:fetch?).with("second-skill").returns(second_def)
+    stub_tool_policy_lookup(stub("p", allowed_tools: []))
+
+    # Stubs definidos ANTES do update! para que a validação active_skill_name_must_be_known
+    # use o Registry stubado ao invés do Registry real.
+    conv.update!(active_skill_name: "second-skill")
+    ChatSessionManager.stubs(:ask_through_chain).raises(StandardError, "erro de teste")
+
+    assert_raises(StandardError) do
+      ChatSessionManager.ask(scope: @scope, content: "ideia",
+                             user_id: "101", username: "joao",
+                             requested_skill: "grill-me")
+    end
+
+    conv.reload
+    assert_equal "second-skill", conv.active_skill_name
+  end
+
+  test "R8-Item3a: exceção sem skill anterior (nil) não deixa skill persistida" do
+    conv = Conversation.open_for(scope: @scope.key, channel_id: "202", user_id: "101")
+
+    grill = grill_definition
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    Skills::Registry.stubs(:fetch?).with("grill-me").returns(grill)
+    stub_tool_policy_lookup(stub("p", allowed_tools: []))
+    ChatSessionManager.stubs(:ask_through_chain).raises(StandardError, "erro de teste")
+
+    assert_raises(StandardError) do
+      ChatSessionManager.ask(scope: @scope, content: "ideia",
+                             user_id: "101", username: "joao",
+                             requested_skill: "grill-me")
+    end
+
+    conv.reload
+    assert_nil conv.active_skill_name,
+               "quando não há skill anterior, exceção não deve persistir nova skill"
+  end
+
+  test "R8-Item3b: resposta branca COM skill anterior restaura skill anterior" do
+    conv = Conversation.open_for(scope: @scope.key, channel_id: "202", user_id: "101")
+
+    grill = grill_definition
+    second_def = Skills::Registry.new.fetch?("second-skill")
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    Skills::Registry.stubs(:fetch?).with("grill-me").returns(grill)
+    Skills::Registry.stubs(:fetch?).with("second-skill").returns(second_def)
+    stub_tool_policy_lookup(stub("p", allowed_tools: []))
+
+    # Stubs definidos ANTES do update! para que a validação active_skill_name_must_be_known
+    # use o Registry stubado ao invés do Registry real (que pode não ter second-skill
+    # carregado corretamente nesse contexto de teste).
+    conv.update!(active_skill_name: "second-skill")
+    stub_chat("")
+
+    res = ChatSessionManager.ask(scope: @scope, content: "ideia vazia",
+                                 user_id: "101", username: "joao",
+                                 requested_skill: "grill-me")
+    assert_equal ChatSessionManager::BLANK_RESPONSE_WARNING, res
+
+    conv.reload
+    assert_equal "second-skill", conv.active_skill_name,
+                 "resposta branca deve restaurar skill anterior quando existir"
+  end
+
+  test "ask roda sem skill quando requested_skill não existe no registry" do
+    Skills::Registry.stubs(:fetch?).with("skill-fantasma").returns(nil)
+    Skills::Registry.stubs(:fetch?).with(anything).returns(nil)
+    stub_tool_policy_lookup(stub("p", allowed_tools: []))
+    ConversationCompactor.stubs(:needs_compaction?).returns(false)
+    stub_chat("ok")
+
+    ChatSessionManager.ask(scope: @scope, content: "oi",
+                           user_id: "101", username: "joao",
+                           requested_skill: "skill-fantasma")
+
+    conv = Conversation.active_for(@scope.key)
+    assert_nil conv.active_skill_name,
+               "skill desconhecida não é persistida — chat normal continua"
+  end
+end
