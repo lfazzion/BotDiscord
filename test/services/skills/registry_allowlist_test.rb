@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Testes para o módulo DeriveAllowlist e a integração com Skills::Registry.
+# Testes para o módulo Skills::DeriveAllowlist e a integração com Skills::Registry.
 #
 # Objetivo: provar que as allowlists derivadas dos normalizers são corretas
 # e que o teste de integridade quebra se um normalizer ganhar nova chave
@@ -23,8 +23,8 @@ class DeriveAllowlistTest < ActiveSupport::TestCase
       discord: %i[create_thread thread_visibility thread_name]
     }
 
-    DeriveAllowlist::SECTION_NORMALIZERS.each_key do |section|
-      result = DeriveAllowlist.derived_all[section]
+    Skills::DeriveAllowlist::SECTION_NORMALIZERS.each_key do |section|
+      result = Skills::DeriveAllowlist.derived_all[section]
       assert_equal expected[section], result, "Seção #{section} diverge"
     end
   end
@@ -52,7 +52,7 @@ class DeriveAllowlistTest < ActiveSupport::TestCase
     )
 
     assert_nothing_raised do
-      DeriveAllowlist.integrity_check!(definition)
+      Skills::DeriveAllowlist.integrity_check!(definition)
     end
   end
 
@@ -73,21 +73,21 @@ class DeriveAllowlistTest < ActiveSupport::TestCase
       discord: {}
     )
 
-    original = DeriveAllowlist.derived_all[:root].dup
-    DeriveAllowlist.instance_variable_get(:@caches)[:root] = original + [:nova_chave]
+    original = Skills::DeriveAllowlist.derived_all[:root].dup
+    Skills::DeriveAllowlist.instance_variable_get(:@caches)[:root] = original + [:nova_chave]
 
-    error = assert_raises(DeriveAllowlist::IntegrityError) do
-      DeriveAllowlist.integrity_check!(definition)
+    error = assert_raises(Skills::DeriveAllowlist::IntegrityError) do
+      Skills::DeriveAllowlist.integrity_check!(definition)
     end
     assert_match(/Seção root/, error.message)
   ensure
     # Restaura o valor original
-    DeriveAllowlist.instance_variable_get(:@caches)[:root] = original
+    Skills::DeriveAllowlist.instance_variable_get(:@caches)[:root] = original
   end
 
   test "define lança ArgumentError para seção desconhecida" do
     assert_raises(ArgumentError) do
-      DeriveAllowlist.define(:secao_inexistente)
+      Skills::DeriveAllowlist.define(:secao_inexistente)
     end
   end
 end
@@ -95,15 +95,15 @@ end
 class RegistryAllowlistDerivationTest < ActiveSupport::TestCase
   test "Registry usa allowlists derivadas dos normalizers" do
     # Prova que as constantes do Registry refletem as allowlists derivadas.
-    assert_equal DeriveAllowlist.derived_all[:root], Skills::Registry::ALLOWED_ROOT_KEYS
-    assert_equal DeriveAllowlist.derived_all[:explicit_triggers], Skills::Registry::ALLOWED_EXPLICIT_TRIGGERS_KEYS
-    assert_equal DeriveAllowlist.derived_all[:slash], Skills::Registry::ALLOWED_SLASH_KEYS
-    assert_equal DeriveAllowlist.derived_all[:input], Skills::Registry::ALLOWED_INPUT_KEYS
-    assert_equal DeriveAllowlist.derived_all[:autonomous], Skills::Registry::ALLOWED_AUTONOMOUS_KEYS
-    assert_equal DeriveAllowlist.derived_all[:tools], Skills::Registry::ALLOWED_TOOLS_KEYS
-    assert_equal DeriveAllowlist.derived_all[:context], Skills::Registry::ALLOWED_CONTEXT_KEYS
-    assert_equal DeriveAllowlist.derived_all[:cost], Skills::Registry::ALLOWED_COST_KEYS
-    assert_equal DeriveAllowlist.derived_all[:discord], Skills::Registry::ALLOWED_DISCORD_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:root], Skills::Registry::ALLOWED_ROOT_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:explicit_triggers], Skills::Registry::ALLOWED_EXPLICIT_TRIGGERS_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:slash], Skills::Registry::ALLOWED_SLASH_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:input], Skills::Registry::ALLOWED_INPUT_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:autonomous], Skills::Registry::ALLOWED_AUTONOMOUS_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:tools], Skills::Registry::ALLOWED_TOOLS_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:context], Skills::Registry::ALLOWED_CONTEXT_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:cost], Skills::Registry::ALLOWED_COST_KEYS
+    assert_equal Skills::DeriveAllowlist.derived_all[:discord], Skills::Registry::ALLOWED_DISCORD_KEYS
   end
 
   test "allowed_keys_for retorna allowlist correta para cada chave pai" do
