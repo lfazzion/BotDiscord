@@ -207,4 +207,28 @@ class SkillsSelectorTest < ActiveSupport::TestCase
     result = @registry.candidate_hints?('tenho uma ideia')
     assert_equal true, result
   end
+
+  # ── HOTFIX-SELECTOR-PARAMS (06/09): repasse de params ao LLM ──
+  # Bug de produção: selector passava params: ao AiRouter que não aceitava
+  # (ArgumentError unknown keyword). Fix: AiRouter aceita params: e repassa ao
+  # BaseClient#complete, que aplica chat.with_params.
+  test 'classify repassa params ao cliente (AiRouter + BaseClient reais, RubyLLM stubado)' do
+    # Stub da classe RubyLLM: captura o chat para verificar with_params
+    chat = Object.new
+    def chat.with_instructions(_); end
+    def chat.with_tool(_); end
+    def chat.with_params(**kw); @params = kw; end
+    def chat.captured_params; @params; end
+    def chat.ask(_prompt)
+      Struct.new(:content).new('{"skill": "grill-me", "confidence": 0.9}')
+    end
+    RubyLLM.stubs(:chat).with(model: anything).returns(chat)
+
+    selector = Skills::Selector.new(registry: @registry)
+    result = selector.call('tenho uma ideia vaga de produto', conversation_id: 'conv_params_ok')
+
+    assert_equal 'grill-me', result
+    assert chat.captured_params[:max_tokens], 'params do selector devem chegar ao chat (max_tokens)'
+    assert_equal @registry.selector_max_output_tokens, chat.captured_params[:max_tokens]
+  end
 end

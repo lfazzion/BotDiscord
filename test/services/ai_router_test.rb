@@ -123,7 +123,7 @@ class AiRouterTest < ActiveSupport::TestCase
   test 'complete with :background delegates to GeminiBackgroundClient with user message' do
     Llm::GeminiBackgroundClient.any_instance
                                 .expects(:complete)
-                                .with('hello', system: nil, tools: [])
+                                .with('hello', system: nil, tools: [], params: nil)
                                 .returns('ok')
 
     assert_equal 'ok', AiRouter.complete('hello', context: :background)
@@ -132,7 +132,7 @@ class AiRouterTest < ActiveSupport::TestCase
   test 'complete with :interactive delegates to GeminiInteractiveClient' do
     Llm::GeminiInteractiveClient.any_instance
                                 .expects(:complete)
-                                .with('hello', system: nil, tools: [])
+                                .with('hello', system: nil, tools: [], params: nil)
                                 .returns('ok')
 
     assert_equal 'ok', AiRouter.complete('hello', context: :interactive)
@@ -141,7 +141,7 @@ class AiRouterTest < ActiveSupport::TestCase
   test 'complete with hash prompt forwards system and user to the client' do
     Llm::GeminiInteractiveClient.any_instance
                                 .expects(:complete)
-                                .with('hello', system: 'be brief', tools: [])
+                                .with('hello', system: 'be brief', tools: [], params: nil)
                                 .returns('ok')
 
     assert_equal 'ok', AiRouter.complete({ system: 'be brief', user: 'hello' })
@@ -154,7 +154,7 @@ class AiRouterTest < ActiveSupport::TestCase
 
     Llm::OpenrouterClient.any_instance
                         .expects(:complete)
-                        .with('hello', system: nil, tools: [])
+                        .with('hello', system: nil, tools: [], params: nil)
                         .returns('fallback')
 
     assert_equal 'fallback', AiRouter.complete('hello', context: :background)
@@ -167,7 +167,7 @@ class AiRouterTest < ActiveSupport::TestCase
 
     Llm::OpenrouterClient.any_instance
                         .expects(:complete)
-                        .with('hello', system: nil, tools: [])
+                        .with('hello', system: nil, tools: [], params: nil)
                         .returns('fallback')
 
     assert_equal 'fallback', AiRouter.complete('hello')
