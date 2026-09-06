@@ -212,6 +212,11 @@ class SkillsSelectorTest < ActiveSupport::TestCase
   # Bug de produção: selector passava params: ao AiRouter que não aceitava
   # (ArgumentError unknown keyword). Fix: AiRouter aceita params: e repassa ao
   # BaseClient#complete, que aplica chat.with_params.
+  #
+  # HOTFIX-GEMINI-PARAMS (06/09): após a normalização por provedor em
+  # BaseClient#complete, o Gemini recebe max_tokens como
+  # generationConfig.maxOutputTokens — não mais no topo. O teste abaixo
+  # verifica o formato normalizado (Gemini), não o formato OpenAI raw.
   test 'classify repassa params ao cliente (AiRouter + BaseClient reais, RubyLLM stubado)' do
     # Stub da classe RubyLLM: captura o chat para verificar with_params
     chat = Object.new
@@ -228,7 +233,7 @@ class SkillsSelectorTest < ActiveSupport::TestCase
     result = selector.call('tenho uma ideia vaga de produto', conversation_id: 'conv_params_ok')
 
     assert_equal 'grill-me', result
-    assert chat.captured_params[:max_tokens], 'params do selector devem chegar ao chat (max_tokens)'
-    assert_equal @registry.selector_max_output_tokens, chat.captured_params[:max_tokens]
+    assert_equal @registry.selector_max_output_tokens, chat.captured_params[:generationConfig][:maxOutputTokens],
+                 'params do selector devem chegar ao chat normalizados para o Gemini'
   end
 end
