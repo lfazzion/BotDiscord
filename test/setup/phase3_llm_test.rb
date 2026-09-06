@@ -87,7 +87,7 @@ class Phase3LlmTest < ActiveSupport::TestCase
     Rails.cache = original_store
 
     assert_equal max, success_count,
-      "expected exactly #{max} reservations to succeed, got #{success_count}"
+      "expected exactly #{max} reservations to succeed, got #{success_count}; store=#{Rails.cache.class}"
   end
 
   test 'complete rolls back quota when RubyLLM.chat raises non-rate-limit error (preparação)' do
