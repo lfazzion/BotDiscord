@@ -171,8 +171,11 @@ class DiscordBotServiceSkillEntrypointTest < ActiveSupport::TestCase
 
     # Simula aceite: usuario diz "sim cria a thread"
     new_thread = stub(id: new_thread_id, thread?: true, parent_id: "456")
+    new_thread.stubs(:send_message)
     event1.channel.stubs(:start_thread).returns(new_thread)
-    event1.channel.stubs(:guild).returns(stub(channels: []))
+    # guild.channels precisa conter a thread recem-criada (o ThreadEventProxy
+    # novo resolve a thread pelo guild e levanta erro nomeado se nao achar)
+    event1.channel.stubs(:guild).returns(stub(id: "g1", channels: [new_thread]))
 
     ChatSessionManager.expects(:ask).with(
       has_entries(

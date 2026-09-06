@@ -2,17 +2,20 @@
 
 class AiRouter
   class << self
-    def complete(prompt, context: :interactive, tools: [])
+    def complete(prompt, context: :interactive, tools: [], params: nil)
       system_msg, user_msg = extract_messages(prompt)
 
       client = select_client(context)
       Rails.logger.info "[AiRouter] Roteando para #{client.class.name} (ctx: #{context})"
 
-      client.complete(user_msg, system: system_msg, tools: tools)
+      # HOTFIX-SELECTOR-PARAMS (06/09): repasse de params de modelo (max_tokens do
+      # selector). BaseClient#complete aceita params: e aplica chat.with_params —
+      # mesma semantica de quota/fallback do caminho sem params.
+      client.complete(user_msg, system: system_msg, tools: tools, params: params)
     rescue Llm::BaseClient::QuotaExceededError, RubyLLM::RateLimitError,
            RubyLLM::ServiceUnavailableError, RubyLLM::OverloadedError,
            RubyLLM::PaymentRequiredError => e
-      fallback(user_msg, system_msg, tools, e)
+      fallback(user_msg, system_msg, tools, params, e)
     end
 
     private
@@ -36,10 +39,10 @@ class AiRouter
       end
     end
 
-    def fallback(user_msg, system_msg, tools, error)
+    def fallback(user_msg, system_msg, tools, params, error)
       Rails.logger.warn "[AiRouter] #{error.class.name}: #{error.message}. " \
                         'Fallback para OpenRouter.'
-      Llm::OpenrouterClient.new.complete(user_msg, system: system_msg, tools: tools)
+      Llm::OpenrouterClient.new.complete(user_msg, system: system_msg, tools: tools, params: params)
     end
   end
 end

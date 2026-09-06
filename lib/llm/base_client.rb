@@ -16,13 +16,17 @@ module Llm
       raise NotImplementedError, "#{self.class}#max_daily_requests não implementado"
     end
 
-    def complete(prompt, system: nil, tools: [])
+    def complete(prompt, system: nil, tools: [], params: nil)
       reserve_quota!
 
       begin
         chat = RubyLLM.chat(model: model_id)
         chat.with_instructions(system) if system
         tools.each { |t| chat.with_tool(t) }
+        # HOTFIX-SELECTOR-PARAMS (06/09): repasse de params de modelo (ex.: max_tokens
+        # do Skills::Selector). Mesmo padrao de chat_session_manager.rb:310 — a gem
+        # faz deep_merge no payload HTTP. args vazios = sem chamada.
+        chat.with_params(**params) if params.is_a?(Hash) && params.any?
       rescue QuotaExceededError
         # levantada dentro de reserve_quota! antes de qualquer chat — nada a reverter
         raise
