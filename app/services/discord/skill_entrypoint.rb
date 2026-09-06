@@ -126,10 +126,15 @@ module Discord
           return { skill_name: nil, scope: scope, content: content }
         end
 
-        # R14-B1: continuacao — "continua", "aqui", "opcao 2", "nao" exato, "2)"
+        # HOTFIX-OPTION-DIGIT (06/09): "1" puro e "2" puro não eram aceitos pelo parser,
+        # apesar da offer_response oferecer "(1)" e "(2)" — o dono respondeu "1" e a oferta
+        # foi engolida pelo else final. Manter \A1\) e \A2\) (já existentes) e adicionar
+        # \A1\z e \A2\z para cobrir a resposta curta do usuário.
+        # R14-B1: continuacao — "continua", "aqui", "opcao 2", "nao" exato, "2)", "2"
         continued = normalized.match?(/\A(?:continua|aqui|opcao 2)\b/) ||
                     normalized == 'nao' ||
-                    normalized.match?(/\A2\)/)
+                    normalized.match?(/\A2\)/) ||
+                    normalized.match?(/\A2\z/)
 
         if continued
           # R5a: captura skill_name e conteúdo original ANTES de chamar activate_skill
@@ -140,10 +145,12 @@ module Discord
         end
 
         # R14-B1: aceite — "sim", "thread", "criar", "cliquei", "opcao 1",
-        #            "tente novamente", "tentar novamente", "tenta de novo", "1)"
+        #            "tente novamente", "tentar novamente", "tenta de novo", "1)",
+        #            "1"
         #            OU mensagem que contém verbo de criacao (nao recusado)
         accepted = normalized.match?(/\A(?:sim|thread|criar|cliquei|opcao 1|tente novamente|tentar novamente|tenta de novo)\z/) ||
-                   normalized.match?(/\A1\)/)
+                   normalized.match?(/\A1\)/) ||
+                   normalized.match?(/\A1\z/)
 
         # R14-B1: se nao é recusa e contem verbo de criacao -> aceite
         # Isso cobre: "pode criar thread", "nao, pode criar thread",

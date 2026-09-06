@@ -743,6 +743,93 @@ scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
     assert_nil result12[:thread_id], "12) não deve ser interpretado como 2)"
   end
 
+  # HOTFIX-OPTION-DIGIT (06/09): "1" puro e "2" puro não eram aceitos pelo parser,
+  # apesar da offer_response oferecer "(1)" e "(2)" — o dono respondeu "1" e a oferta
+  # foi engolida pelo else final. Adicionar \A1\z e \A2\z mantendo \A1\) e \A2\).
+  test "R14-B1-DIGIT: '1' puro aceita oferta pendente e cria thread" do
+    scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
+    conv = mock_conversation(
+      scope_key: scope.key,
+      offered_skill_name: "grill-me",
+      offered_at: Time.current,
+      offered_content: "minha ideia"
+    )
+    Conversation.stubs(:active_for).with(scope.key).returns(conv)
+
+    new_thread = stub(id: "777", thread?: true, parent_id: "456")
+    event = mock_event(channel_id: "456", content: "1")
+    event.channel.expects(:start_thread).with(anything, anything, anything).returns(new_thread)
+
+    result = Discord::SkillEntrypoint.evaluate(event, scope, "1")
+
+    assert_equal "grill-me", result[:skill_name]
+    assert_equal "777", result[:thread_id]
+  end
+
+  test "R14-B1-DIGIT: '2' puro continua oferta sem criar thread" do
+    scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
+    conv = mock_conversation(
+      scope_key: scope.key,
+      offered_skill_name: "grill-me",
+      offered_at: Time.current,
+      offered_content: "minha ideia"
+    )
+    Conversation.stubs(:active_for).with(scope.key).returns(conv)
+
+    event = mock_event(channel_id: "456", content: "2")
+    event.channel.expects(:start_thread).never
+
+    result = Discord::SkillEntrypoint.evaluate(event, scope, "2")
+
+    assert_equal "grill-me", result[:skill_name]
+    assert_nil result[:thread_id]
+    assert_equal "minha ideia", result[:content]
+  end
+
+  test "R14-B1-DIGIT: '1)' e '1' ambos aceitam oferta (parametrico)" do
+    scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
+    ["1", "1)"].each do |content|
+      conv = mock_conversation(
+        scope_key: scope.key,
+        offered_skill_name: "grill-me",
+        offered_at: Time.current,
+        offered_content: "minha ideia"
+      )
+      Conversation.stubs(:active_for).with(scope.key).returns(conv)
+
+      new_thread = stub(id: "777", thread?: true, parent_id: "456")
+      event = mock_event(channel_id: "456", content: content)
+      event.channel.expects(:start_thread).with(anything, anything, anything).returns(new_thread)
+
+      result = Discord::SkillEntrypoint.evaluate(event, scope, content)
+
+      assert_equal "grill-me", result[:skill_name], "content=#{content}"
+      assert_equal "777", result[:thread_id], "content=#{content}"
+    end
+  end
+
+  test "R14-B1-DIGIT: '2)' e '2' ambos continuam oferta sem thread (parametrico)" do
+    scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
+    ["2", "2)"].each do |content|
+      conv = mock_conversation(
+        scope_key: scope.key,
+        offered_skill_name: "grill-me",
+        offered_at: Time.current,
+        offered_content: "minha ideia"
+      )
+      Conversation.stubs(:active_for).with(scope.key).returns(conv)
+
+      event = mock_event(channel_id: "456", content: content)
+      event.channel.expects(:start_thread).never
+
+      result = Discord::SkillEntrypoint.evaluate(event, scope, content)
+
+      assert_equal "grill-me", result[:skill_name], "content=#{content}"
+      assert_nil result[:thread_id], "content=#{content}"
+      assert_equal "minha ideia", result[:content], "content=#{content}"
+    end
+  end
+
   test "R13-B1': negativas com verbo modal entre nao e o verbo sao tratadas como recusa" do
     scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
     ["nao pode criar thread", "nao precisa abrir thread"].each do |phrase|
