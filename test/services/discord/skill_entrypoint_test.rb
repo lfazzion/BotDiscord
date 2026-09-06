@@ -354,7 +354,12 @@ class DiscordSkillEntrypointTest < ActiveSupport::TestCase
     conv = mock_conversation(scope_key: scope.key, offered_skill_name: "grill-me", offered_at: Time.current)
     Conversation.stubs(:active_for).with(scope.key).returns(conv)
 
-    # Nao deve criar thread nem ativar modo
+    # Stub do Selector para nil: mensagem que o classificador não reconhece
+    # segue descartando a oferta (comportamento esperado com o fix).
+    mock_selector_nil = stub(call: nil)
+    Skills::Selector.stubs(:new).returns(mock_selector_nil)
+
+    # Não deve criar thread nem ativar modo
     event.channel.expects(:start_thread).never
     # Não precisa verificar update! - o teste só quer garantir que oferta é descartada
     # conv.expects(:update!).with(...)
@@ -366,6 +371,47 @@ class DiscordSkillEntrypointTest < ActiveSupport::TestCase
     assert_nil result[:response]
   end
 
+  test "mensagem nova com oferta pendente e IDEIA re-classificavel re-oferece a skill em vez de engolir" do
+    event = mock_event(channel_id: "456", content: "tenho uma ideia de app de treinos")
+    scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
+
+    # Simula conversa com oferta pendente ANTIGA (do classificador que quebrou antes)
+    conv = mock_conversation(scope_key: scope.key, offered_skill_name: "grill-me", offered_at: Time.current)
+    Conversation.stubs(:active_for).with(scope.key).returns(conv)
+
+    # Stub do Selector para retornar "grill-me" — a nova mensagem é re-classificável
+    mock_selector = stub(call: "grill-me")
+    Skills::Selector.stubs(:new).returns(mock_selector)
+
+    # Mock do registry para retornar a definição da skill com create_thread?
+    grill_def = stub(create_thread?: true, present?: true)
+    mock_registry = stub(
+      explicit_match?: nil,
+      fetch?: grill_def,
+      fetch: grill_def,
+      candidate_hints?: true
+    )
+    Skills::Registry.stubs(:new).returns(mock_registry)
+
+    # Captura os args do update! para verificar save_offered_skill
+    update_args = nil
+    conv.stubs(:update!).with do |*args|
+      update_args = args.first
+      true
+    end
+
+    # Não deve criar thread neste ponto (ainda está em oferta)
+    event.channel.expects(:start_thread).never
+
+    result = Discord::SkillEntrypoint.evaluate(event, scope, "tenho uma ideia de app de treinos")
+
+    assert_equal "grill-me", result[:skill_name], "skill deve ser re-classificada"
+    assert result[:response].present?, "deve responder com oferta (resposta presente)"
+    assert_nil result[:thread_id], "não deve criar thread ainda — apenas oferta"
+    assert_not_nil update_args, "save_offered_skill deve ter sido chamado (update!)"
+    assert_equal "grill-me", update_args[:offered_skill_name], "oferta com skill correta"
+    assert_equal "tenho uma ideia de app de treinos", update_args[:offered_content], "conteúdo novo persiste"
+  end
   test "oferta pendente expirada apos 30 minutos e descarta automatica" do
     event = mock_event(channel_id: "456", content: "tenho uma ideia")
     scope = Discord::SessionScope.for(user_id: "123", channel_id: "456")
