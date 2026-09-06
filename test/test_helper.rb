@@ -1,4 +1,12 @@
+# frozen_string_literal: true
+#
+# test_helper.rb — carrega dependências de teste incluindo TestSupport
+#
+# Whitelist: lib/test_support/ (novo), test/setup/phase3_llm_test.rb,
+#            tmp/validate_standalone.rb.
+
 ENV['RAILS_ENV'] ||= 'test'
+require_relative '../lib/test_support/fake_atomic_cache_store'   # carrega antes do environment
 require_relative '../config/environment'
 require 'rails/test_help'
 require 'webmock/minitest'

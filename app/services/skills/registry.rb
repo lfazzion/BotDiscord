@@ -261,15 +261,15 @@ module Skills
     # Espelham as chaves que cada normalizador aceita, gerando o conjunto
     # congelado por seção. Se um normalizer ganhar chave e o conjunto não
     # for atualizado, o teste de integridade quebra.
-    ALLOWED_ROOT_KEYS = DeriveAllowlist.derived_all[:root]
-    ALLOWED_EXPLICIT_TRIGGERS_KEYS = DeriveAllowlist.derived_all[:explicit_triggers]
-    ALLOWED_SLASH_KEYS = DeriveAllowlist.derived_all[:slash]
-    ALLOWED_INPUT_KEYS = DeriveAllowlist.derived_all[:input]
-    ALLOWED_AUTONOMOUS_KEYS = DeriveAllowlist.derived_all[:autonomous]
-    ALLOWED_TOOLS_KEYS = DeriveAllowlist.derived_all[:tools]
-    ALLOWED_CONTEXT_KEYS = DeriveAllowlist.derived_all[:context]
-    ALLOWED_COST_KEYS = DeriveAllowlist.derived_all[:cost]
-    ALLOWED_DISCORD_KEYS = DeriveAllowlist.derived_all[:discord]
+    ALLOWED_ROOT_KEYS = Skills::DeriveAllowlist.derived_all[:root]
+    ALLOWED_EXPLICIT_TRIGGERS_KEYS = Skills::DeriveAllowlist.derived_all[:explicit_triggers]
+    ALLOWED_SLASH_KEYS = Skills::DeriveAllowlist.derived_all[:slash]
+    ALLOWED_INPUT_KEYS = Skills::DeriveAllowlist.derived_all[:input]
+    ALLOWED_AUTONOMOUS_KEYS = Skills::DeriveAllowlist.derived_all[:autonomous]
+    ALLOWED_TOOLS_KEYS = Skills::DeriveAllowlist.derived_all[:tools]
+    ALLOWED_CONTEXT_KEYS = Skills::DeriveAllowlist.derived_all[:context]
+    ALLOWED_COST_KEYS = Skills::DeriveAllowlist.derived_all[:cost]
+    ALLOWED_DISCORD_KEYS = Skills::DeriveAllowlist.derived_all[:discord]
 
     def validate_and_normalize!(data, path)
       validate_root_keys!(data, path)
