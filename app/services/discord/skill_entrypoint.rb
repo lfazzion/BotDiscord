@@ -175,7 +175,23 @@ module Discord
           activate_skill(conversation, skill_name)
           return { skill_name: skill_name, scope: scope, content: original_content }
         else
-          # Mensagem não interpretada como aceite/continuacao: descarta oferta
+          # Mensagem não interpretada como aceite/continuacao:
+          # re-classifica antes de descartar — evita engoli-la quando há
+          # oferta pendente antiga e a nova mensagem é re-classificavel.
+          selector = Skills::Selector.new(registry: registry)
+          skill_name = selector.call(content, conversation_id: scope.key)
+          if skill_name.present?
+            definition = registry.fetch?(skill_name)
+            if definition&.create_thread? && conversation.present?
+              clear_offered_skill(conversation)
+              save_offered_skill(conversation, skill_name, content)
+              return offer_response(skill_name, scope, content)
+            end
+            clear_offered_skill(conversation)
+            return resolve_thread(skill_name, definition, event, scope, content)
+          end
+
+          # Classified nil: mantém comportamento anterior — descarta e vai embora.
           clear_offered_skill(conversation)
           return { skill_name: nil, scope: scope, content: content }
         end
