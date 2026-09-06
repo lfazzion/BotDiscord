@@ -45,18 +45,19 @@ class Phase3LlmTest < ActiveSupport::TestCase
     end
   end
 
-  test 'concurrent reserves: between N attempts for quota M, exactly M succeed (reservations only)' do
+  test 'concurrent reserves: between N attempts for quota M, exactly M succeed (reservas only)' do
     max = 5
     # Override max_daily_requests on the instance to a small number for
     # a deterministic concurrency test.
     client.define_singleton_method(:max_daily_requests) { max }
 
-    # file_store does not provide true atomic CAS increment — use MemoryStore
-    # which guarantees atomic increment/decrement via in-process locking.
+    # Use FakeAtomicCacheStore (mutex-protected hash) to provide true
+    # atomic increment between threads — the original MemoryStore does
+    # read-modify-write and flakes under concurrency (CI #33998764355).
     # This mirrors production SolidCache behaviour where increment is
     # natively atomic.
     original_store = Rails.cache
-    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache = TestSupport::FakeAtomicCacheStore.new
     Rails.cache.write(cache_key, 0, expires_in: 26.hours)
 
     total = max * 2
