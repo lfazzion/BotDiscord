@@ -14,28 +14,37 @@ end
 require_relative "../../app/models/search_api_quota"
 
 class SearchApiQuotaTest < Minitest::Test
+  # FIX (07/09/2026, CI seed 3709): este arquivo é Minitest puro e ANTES estabelecia
+  # ActiveRecord::Base -> sqlite :memory: quando nenhuma conexão existia. A conexão é GLOBAL:
+  # com seed que rodasse este arquivo antes de um ActiveSupport::TestCase, todo o resto da
+  # suíte herdava o :memory: vazio (724 errors "Could not find table" no CI do PR #44 —
+  # reproduzido localmente na main pura com o par search_api_quota_test +
+  # friday_ideation_job_test). No modo SUÍTE (bin/rails test), usa a conexão padrão (a
+  # tabela existe no db/schema.rb). No modo STANDALONE (ruby ...), não há Rails: conecta o
+  # MODELO a um pool próprio :memory: — sem tocar o pool global de AR.
   def setup
-    unless ActiveRecord::Base.connected?
-      ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
-    end
-
-    unless ActiveRecord::Base.connection.table_exists?(:search_api_quotas)
-      ActiveRecord::Schema.define do
-        create_table :search_api_quotas, force: true do |t|
-          t.string :api_name, null: false
-          t.string :month, null: false
-          t.integer :count, null: false, default: 0
-          t.timestamps
-          t.index %i[api_name month], name: "index_search_api_quotas_on_api_name_and_month", unique: true
-        end
+    unless defined?(Rails)
+      conectado = begin
+        SearchApiQuota.connection_pool.connected?
+      rescue StandardError
+        false
+      end
+      unless conectado
+        SearchApiQuota.establish_connection(adapter: "sqlite3", database: ":memory:")
+      end
+      SearchApiQuota.connection.create_table :search_api_quotas, force: true do |t|
+        t.string :api_name, null: false
+        t.string :month, null: false
+        t.integer :count, null: false, default: 0
+        t.timestamps
+        t.index %i[api_name month], name: "index_search_api_quotas_on_api_name_and_month", unique: true
       end
     end
-
-    SearchApiQuota.delete_all if ActiveRecord::Base.connected? && ActiveRecord::Base.connection.table_exists?(:search_api_quotas)
+    SearchApiQuota.delete_all if SearchApiQuota.table_exists?
   end
 
   def teardown
-    SearchApiQuota.delete_all if ActiveRecord::Base.connected? && ActiveRecord::Base.connection.table_exists?(:search_api_quotas)
+    SearchApiQuota.delete_all if SearchApiQuota.table_exists?
   end
 
   def test_table_name_e_plural_search_api_quotas
