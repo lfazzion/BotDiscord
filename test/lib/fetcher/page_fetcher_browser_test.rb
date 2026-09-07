@@ -363,18 +363,75 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     fetcher.send(:wait_for_body_stabilize, page, budget: 0.4)
   end
 
-  test "reset_browser! nao da quit com outro render in-flight ate o segundo sair" do
+  test "reset_browser! com holder real em voo adia; sem holder real (chamador ainda sem browser) descarta na hora (Sol r2)" do
     quit_called = false
     fake_browser = FakeBrowser.new
     fake_browser.define_singleton_method(:quit) { quit_called = true }
     Fetcher::PageFetcher.instance_variable_set(:@browser, fake_browser)
+    Fetcher::PageFetcher.instance_variable_set(:@pending_discard, false)
 
+    # Caso 1 — outro request de fato RECEBEU a instância (received = 1):
+    # o reset adia e não derruba enquanto o holder usa.
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 1)
     Fetcher::PageFetcher.track_in_flight do
       Fetcher::PageFetcher.reset_browser!
-      assert_equal false, quit_called, "quit nao pode rodar enquanto in_flight > 0"
+      assert_equal false, quit_called, "quit nao pode rodar enquanto holder real em voo"
     end
+    assert_equal true, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
+                 "reset com holder real marca pending (instancia condenada)"
 
-    assert_equal true, quit_called, "quit deve rodar assim que in_flight zerar"
+    # Caso 2 — chamador dentro do track mas SEM browser recebido (received = 0):
+    # o descarte é IMEDIATO; um browser() subsequente recebe instância nova.
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
+    rebuilt = FakeBrowser.new
+    rebuilt.define_singleton_method(:quit) { quit_called = true }
+    Fetcher::PageFetcher.stubs(:build_browser).returns(rebuilt)
+    got = nil
+    Fetcher::PageFetcher.track_in_flight do
+      Fetcher::PageFetcher.reset_browser!
+      got = Fetcher::PageFetcher.browser
+    end
+    assert_same rebuilt, got,
+                "browser() após reset sem holder real NÃO devolve a instância condenada"
+    assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
+                 "descarte imediato limpa pending (não condena a instância nova)"
+  end
+
+  test "interleaving Sol r2: A resetou; B entra no track e recebe instância NOVA, não a condenada" do
+    condemned = FakeBrowser.new
+    rebuilt = FakeBrowser.new
+    Fetcher::PageFetcher.instance_variable_set(:@browser, condemned)
+    Fetcher::PageFetcher.instance_variable_set(:@pending_discard, false)
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
+    Fetcher::PageFetcher.stubs(:build_browser).returns(rebuilt)
+
+    b_entered = Queue.new
+    b_can_proceed = Queue.new
+    got = nil
+    t_b = Thread.new do
+      Fetcher::PageFetcher.track_in_flight do
+        b_entered << true
+        b_can_proceed.pop
+        got = Fetcher::PageFetcher.browser
+      end
+    end
+    t_b.abort_on_exception = true
+    b_entered.pop # B está no track (in_flight > 0) mas ainda NÃO recebeu browser
+
+    # A (fora do track, holders = 0): sofre timeout e reseta — descarte
+    # IMEDIATO: a condenada sai do cache (pending nem persiste; o browser()
+    # de B reconstruirá).
+    Fetcher::PageFetcher.reset_browser!
+    assert_not Fetcher::PageFetcher.instance_variable_get(:@browser).equal?(condemned),
+               "instância condenada não permanece no cache"
+
+    # B chama browser(): NÃO pode receber a condenada.
+    b_can_proceed << true
+    t_b.join
+    assert_same rebuilt, got,
+                "B recebeu instância nova (a condenada foi descartada antes da entrega)"
+    assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
+                 "pending é consumido pelo descarte da condenada"
   end
 
   # ── DEFEITO 3: DNS rebinding no caminho Chrome ──────────────────────────

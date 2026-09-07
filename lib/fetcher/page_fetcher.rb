@@ -102,7 +102,10 @@ module Fetcher
           # por isso não serve para decidir o descarte (Sol r1, Blocker do PR
           # #148: sem essa distinção, o request seguinte a uma falha de limpeza
           # recebia a instância sabidamente suja).
-          if @browser && (expired? || !alive?(@browser) || browser_dirty?)
+          if @browser && (expired? || !alive?(@browser) || browser_dirty? || @pending_discard)
+            # pending_discard condena a instância (Sol r2): quem pediu reset
+            # (timeout/sessão morta) marcou-a para morrer — entregar de novo
+            # reproduz o erro no request que chega depois.
             if (@browser_received || 0) > 0
               # Outro request de fato segura a instância: não derrubar agora.
               # O descarte fica agendado para o ensure do último que soltar.
@@ -160,7 +163,11 @@ module Fetcher
 
       def reset_browser!
         BROWSER_MUTEX.synchronize do
-          if (@in_flight || 0) > 0
+          # Decide por @browser_received (Sol r2), não por @in_flight: um request
+          # pode estar no track_in_flight sem TER RECEBIDO a instância ainda —
+          # quando ele chamar browser(), a instância condenada (pending_discard
+          # setado abaixo) é descartada antes de lhe ser entregue.
+          if (@browser_received || 0) > 0
             @pending_discard = true
           else
             discard_locked!
@@ -205,6 +212,7 @@ module Fetcher
 
       # Só chamar com BROWSER_MUTEX já retido — Mutex do Ruby não é reentrante.
       def discard_locked!
+        @pending_discard = false
         @browser_received = 0 if @browser
         if @browser
           begin
