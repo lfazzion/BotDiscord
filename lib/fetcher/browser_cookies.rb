@@ -29,15 +29,21 @@ module Fetcher
       def for(domain)
         alvo = normalize(domain)
 
-        PageFetcher.browser.cookies.all.each_value.filter_map do |cookie|
-          next unless matches?(cookie.domain, alvo)
+        # Lida com o browser DENTRO do ciclo de vida (track_in_flight): sem o
+        # contador, um reset/quit pode rodar entre a obtenção da referência e o
+        # comando CDP — referência obtida não é posse do ciclo de vida (Sol r1,
+        # item 3 do PR #148).
+        PageFetcher.track_in_flight do
+          PageFetcher.browser.cookies.all.each_value.filter_map do |cookie|
+            next unless matches?(cookie.domain, alvo)
 
-          {
-            "name"   => cookie.name.to_s,
-            "value"  => cookie.value.to_s,
-            "domain" => cookie.domain.to_s,
-            "path"   => cookie.path.to_s.presence || "/"
-          }
+            {
+              "name"   => cookie.name.to_s,
+              "value"  => cookie.value.to_s,
+              "domain" => cookie.domain.to_s,
+              "path"   => cookie.path.to_s.presence || "/"
+            }
+          end
         end
       rescue StandardError => e
         Rails.logger.warn "[Fetcher::BrowserCookies] sessão do Chrome indisponível: #{e.class}: #{e.message}"
@@ -66,7 +72,9 @@ module Fetcher
           nome = cookie["name"].to_s
           next if nome.empty?
 
-          PageFetcher.browser.cookies.set(**atributos(cookie))
+          PageFetcher.track_in_flight do
+            PageFetcher.browser.cookies.set(**atributos(cookie))
+          end
           nome
         end
 
