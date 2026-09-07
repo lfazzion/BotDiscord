@@ -96,18 +96,19 @@ module Fetcher
 
       def browser
         BROWSER_MUTEX.synchronize do
+          # @browser_received conta requests que JÁ OBTIVERAM a instância e
+          # seguem em voo (rastreado por thread). @in_flight é semáforo de
+          # concorrência e inclui o chamador atual, que ainda NÃO recebeu nada —
+          # por isso não serve para decidir o descarte (Sol r1, Blocker do PR
+          # #148: sem essa distinção, o request seguinte a uma falha de limpeza
+          # recebia a instância sabidamente suja).
           if @browser && (expired? || !alive?(@browser) || browser_dirty?)
-            # O chamador já se contabilizou em track_in_flight ANTES de chamar
-            # browser() (in_flight >= 1 sempre aqui). in_flight == 1 significa
-            # que NENHUM outro request usa a instância — o próprio solicitante
-            # ainda não a utilizou, então descartar agora é seguro e necessário:
-            # devolver um browser sabidamente sujo (close/dispose falharam)
-            # re-produz o erro no request novo (Sol r1, Blocker do PR #148).
-            if (@in_flight || 0) <= 1
-              discard_locked!
-            else
-              # Outro request ainda em voo além do chamador: não derrubar agora.
+            if (@browser_received || 0) > 0
+              # Outro request de fato segura a instância: não derrubar agora.
+              # O descarte fica agendado para o ensure do último que soltar.
               @pending_discard = true
+            else
+              discard_locked!
             end
           end
 
@@ -117,6 +118,10 @@ module Fetcher
             @browser_dirty = false
             build_browser
           end
+
+          @browser_received = (@browser_received || 0) + 1
+          Thread.current[:page_fetcher_holds_browser] = true
+          @browser
         end
       end
 
@@ -139,9 +144,13 @@ module Fetcher
       ensure
         if acquired
           BROWSER_MUTEX.synchronize do
+            if Thread.current[:page_fetcher_holds_browser]
+              @browser_received = [(@browser_received || 1) - 1, 0].max
+              Thread.current[:page_fetcher_holds_browser] = nil
+            end
             @in_flight = [(@in_flight || 1) - 1, 0].max
             BROWSER_CV.broadcast
-            if @pending_discard && @in_flight == 0
+            if @pending_discard && @browser_received == 0
               discard_locked!
               @pending_discard = false
             end
@@ -196,6 +205,7 @@ module Fetcher
 
       # Só chamar com BROWSER_MUTEX já retido — Mutex do Ruby não é reentrante.
       def discard_locked!
+        @browser_received = 0 if @browser
         if @browser
           begin
             @browser.reset

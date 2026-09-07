@@ -164,6 +164,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.instance_variable_set(:@pages_since_start, 0)
     Fetcher::PageFetcher.instance_variable_set(:@browser_dirty, false)
     Fetcher::PageFetcher.instance_variable_set(:@in_flight, 0)
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
     Fetcher::PageFetcher.instance_variable_set(:@pending_discard, false)
   end
 
@@ -173,7 +174,9 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.instance_variable_set(:@pages_since_start, 0)
     Fetcher::PageFetcher.instance_variable_set(:@browser_dirty, false)
     Fetcher::PageFetcher.instance_variable_set(:@in_flight, 0)
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
     Fetcher::PageFetcher.instance_variable_set(:@pending_discard, false)
+    Thread.current[:page_fetcher_holds_browser] = nil
   end
 
   # ── DEFEITO 1: método chamado no objeto errado ────────────────────────────
@@ -242,7 +245,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.instance_variable_set(:@browser_started_at, Time.current)
     Fetcher::PageFetcher.expects(:build_browser).once.returns(fresh)
 
-    assert_same fresh, Fetcher::PageFetcher.browser,
+    assert_same fresh, Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser },
                 "o browser morto foi devolvido do cache — é o que envenena a escalada por 24h"
     assert_equal 1, dead.version_calls
   end
@@ -253,8 +256,8 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.instance_variable_set(:@browser_started_at, Time.current)
     Fetcher::PageFetcher.expects(:build_browser).never
 
-    assert_same live, Fetcher::PageFetcher.browser
-    assert_same live, Fetcher::PageFetcher.browser
+    assert_same live, Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
+    assert_same live, Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
     assert_equal 2, live.version_calls, "a sonda tem que rodar a cada uso"
   end
 
@@ -279,7 +282,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     )
     Fetcher::PageFetcher.expects(:build_browser).once.returns(fresh)
 
-    assert_same fresh, Fetcher::PageFetcher.browser
+    assert_same fresh, Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
   end
 
   test "sessão que morre durante o render dispara uma retentativa com browser novo" do
@@ -548,7 +551,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
 
     Fetcher::PageFetcher.expects(:build_browser).once.returns(fresh_browser)
 
-    assert_same fresh_browser, Fetcher::PageFetcher.browser,
+    assert_same fresh_browser, Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser },
                 "browser deve ser reciclado quando pages_since_start >= BROWSER_MAX_PAGES"
   end
 
@@ -572,7 +575,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.instance_variable_set(:@browser_started_at, Time.current)
     Fetcher::PageFetcher.expects(:build_browser).once.returns(rebuilt_browser)
 
-    assert_same rebuilt_browser, Fetcher::PageFetcher.browser
+    assert_same rebuilt_browser, Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
     assert_equal false, Fetcher::PageFetcher.browser_dirty?
   end
 
@@ -636,27 +639,40 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
       :@pages_since_start, Fetcher::PageFetcher::BROWSER_MAX_PAGES
     )
 
-    # Dentro de track_in_flight: @in_flight > 0 — o browser() chamado aqui (pelo
-    # render em voo) NÃO deve derrubar o browser. Apenas marcar @pending_discard.
+    # Ordem de produção (Sol r1): OUTRO request já recebeu a instância e está em
+    # voo (@browser_received = 1 simulando-o). O chamador atual chama browser()
+    # dentro do track: deve receber a MESMA instância (não derrubar em uso) e o
+    # descarte fica pendente até o ÚLTIMO holder soltar (fix v2: @browser_received).
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 1)
+
     result = nil
     Fetcher::PageFetcher.track_in_flight do
       result = Fetcher::PageFetcher.browser
-      # O browser devolvido é o MESMO que está em uso — não foi reciclado
       assert_same live_browser, result,
                   "browser() devolveu uma instância nova em vez do browser em uso"
       assert_equal true, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
                    "pending_discard deve ser marcado, mas browser não deve ser derrubado"
       assert_equal false, live_browser.reset_called,
-                   "reset NÃO pode ser chamado enquanto há render in-flight"
+                   "reset NÃO pode ser chamado enquanto há holder real em voo"
       assert_equal false, live_browser.quit_called,
-                   "quit NÃO pode ser chamado enquanto há render in-flight"
+                   "quit NÃO pode ser chamado enquanto há holder real em voo"
     end
 
-    # Ao sair de track_in_flight (in_flight == 0), o pending_discard dispara o descarte
+    # Ao sair, o chamador soltou a SUA referência, mas o holder simulado continua
+    # (received = 1): o descarte NÃO dispara ainda.
+    assert_equal false, live_browser.reset_called,
+                 "reset não pode rodar enquanto resta holder (received > 0)"
+    assert_equal false, live_browser.quit_called,
+                 "quit não pode rodar enquanto resta holder (received > 0)"
+
+    # Último holder solta: o pending_discard dispara o descarte.
+    Fetcher::PageFetcher.stubs(:build_browser).returns(FakeBrowser.new)
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
+    Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
     assert_equal true, live_browser.reset_called,
-                 "reset deve rodar ao sair do in-flight se pending_discard estava marcado"
+                 "reset deve rodar após o último holder soltar"
     assert_equal true, live_browser.quit_called,
-                 "quit deve rodar ao sair do in-flight se pending_discard estava marcado"
+                 "quit deve rodar após o último holder soltar"
     assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
                  "pending_discard deve ser limpo após o descarte"
   end
@@ -669,6 +685,8 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.instance_variable_set(:@in_flight, 0)
     Fetcher::PageFetcher.instance_variable_set(:@pending_discard, false)
     Fetcher::PageFetcher.instance_variable_set(:@browser_dirty, true)
+    # Ordem de produção: OUTRO request já recebeu a instância e está em voo.
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 1)
 
     result = nil
     Fetcher::PageFetcher.track_in_flight do
@@ -678,15 +696,23 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
       assert_equal true, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
                    "pending_discard deve ser marcado para o browser dirty"
       assert_equal false, live_browser.reset_called,
-                   "reset NÃO pode rodar enquanto há render in-flight"
+                   "reset NÃO pode rodar enquanto há holder real em voo"
       assert_equal false, live_browser.quit_called,
-                   "quit NÃO pode rodar enquanto há render in-flight"
+                   "quit NÃO pode rodar enquanto há holder real em voo"
     end
 
+    assert_equal false, live_browser.reset_called,
+                 "reset não pode rodar enquanto resta holder (received > 0)"
+    assert_equal false, live_browser.quit_called,
+                 "quit não pode rodar enquanto resta holder (received > 0)"
+
+    Fetcher::PageFetcher.stubs(:build_browser).returns(FakeBrowser.new)
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
+    Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
     assert_equal true, live_browser.reset_called,
-                 "reset deve rodar ao sair do in-flight para browser dirty"
+                 "reset deve rodar após o último holder soltar"
     assert_equal true, live_browser.quit_called,
-                 "quit deve rodar ao sair do in-flight para browser dirty"
+                 "quit deve rodar após o último holder soltar"
     assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
                  "pending_discard deve ser limpo após o descarte"
   end
@@ -737,6 +763,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
 
     t1 = Thread.new do
       Fetcher::PageFetcher.track_in_flight do
+        Fetcher::PageFetcher.browser # ordem de produção: obtém a instância
         obs_mutex.synchronize do
           current = Fetcher::PageFetcher.instance_variable_get(:@in_flight)
           max_in_flight_observed = [max_in_flight_observed, current].max
@@ -748,6 +775,7 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
 
     t2 = Thread.new do
       Fetcher::PageFetcher.track_in_flight do
+        Fetcher::PageFetcher.browser # ordem de produção: obtém a instância
 obs_mutex.synchronize do
           current = Fetcher::PageFetcher.instance_variable_get(:@in_flight)
           max_in_flight_observed = [max_in_flight_observed, current].max
@@ -768,12 +796,20 @@ obs_mutex.synchronize do
                  "duas threads devem estar em voo concorrentemente"
     assert_equal 2, max_in_flight_observed
 
-    # Marca pending_discard enquanto ambas as threads estão concorrentes
+    # As duas JÁ OBTIVERAM a instância (browser() dentro do track): received
+    # derivado, não manual.
+    assert_equal 2, Fetcher::PageFetcher.instance_variable_get(:@browser_received),
+                 "as duas threads obtiveram a instância (ordem de produção)"
     Fetcher::PageFetcher.instance_variable_set(:@pending_discard, true)
 
     # Libera thread 1 para sair
     t1_resume << true
     t1.join
+    # pos-t1: resta a t2 segurando a instância — pending NÃO pode limpar ainda.
+    assert_equal true, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
+                 "pending_discard NÃO pode ser limpo enquanto resta 1 thread em voo"
+    assert_equal false, live_browser.quit_called,
+                 "browser NAO pode sofrer quit enquanto houver thread em voo"
 
     assert_equal 1, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
                  "in_flight deve decrementar para 1 após saída da primeira thread"
@@ -788,8 +824,6 @@ assert_equal true, Fetcher::PageFetcher.instance_variable_get(:@pending_discard)
 
 assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
                  "in_flight deve chegar a 0 após saída da segunda thread"
-    assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
-                 "pending_discard deve ser limpo após a saída da última thread"
     assert_equal true, live_browser.quit_called,
 "browser deve sofrer quit na saída da última thread com pending_discard"
   end
