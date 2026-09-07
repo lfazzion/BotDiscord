@@ -30,7 +30,7 @@ module McpServer
         properties: {
           platform: { type: "string", enum: %w[youtube reddit x], description: "Onde ler" },
           query: { type: "string", description: "Assunto (youtube/reddit/x) ou @perfil (x), 1-200 chars" },
-          limit: { type: "integer", minimum: 1, maximum: 25, description: "Máximo de resultados (padrão 10)" }
+          limit: { type: "integer", minimum: 1, maximum: 100, description: "Máximo de resultados (padrão 10)" }
         },
         required: %w[platform query],
         additionalProperties: false

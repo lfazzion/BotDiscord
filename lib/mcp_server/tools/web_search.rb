@@ -51,7 +51,7 @@ module McpServer
       input_schema(
         properties: {
           query: { type: "string", description: "O que procurar, 1-200 chars" },
-          limit: { type: "integer", minimum: 1, maximum: 5, description: "Máximo de resultados (padrão 5)" },
+          limit: { type: "integer", minimum: 1, maximum: 25, description: "Máximo de resultados (padrão 5)" },
           time_range: { type: "string", enum: %w[day week month year], description: "Recorte de tempo, opcional" },
           type: {
             type: "string",
