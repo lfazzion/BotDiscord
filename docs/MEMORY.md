@@ -25,11 +25,17 @@
   - Timeline por perfil (`X.timeline`) permanece no Chrome/CDP com CookieJar — inalterada.
   - Rollback temporário: `X_SEARCH_TRANSPORT=browser` usa o caminho legado (browser); sem env (ou `=graphql`) usa GraphQL. Sem fallback automático.
   - Prazo de revisão da flag: 14 dias ou 2 rotações de bundle (o que for maior) — depois decidir remover ou manter com dono operacional.
-- **[2026-08-10]** Feature — Busca por assunto no X (`X.search`, `SearchFailed`, `SEARCH_BUDGET` 30/h, fronteira `@perfil`/assunto da tool `PlatformSearchTool`).
+- **[2026-08-10]** Feature — Pipeline de Análise de Sentimento (Fase 1 completa):
+  - Migration `20260811000001_create_sentiment_pipeline.rb` com 4 tabelas (`sentiment_targets`, `sentiment_runs`, `sentiment_phrases`, `sentiment_labels`), `frozen_spec` JSON gravado antes do fetch e índice único em `(run_id, external_id)`.
+  - Coleta multi-fonte Reddit E X (`lib/research/sentiment/sources/`): `Reddit.thread_comments(url:)` com timestamps `<time datetime>` do old.reddit; `X.search`/`timeline` com timestamps nativos; taxa de rate limit explícita em old.reddit (2/min).
+  - Classificação 3-way (`Classifier`) em lotes de 100, `temperature: 0`, `response_format: { type: "json_object" }`, prompt em `config/prompts/system/sentiment_classify.yml` com timestamp congelado (`run.started_at` SP), snapshot fixo nos modelos free (`google/gemma-4-26b-a4b-it:free` e `nvidia/nemotron-3-nano-30b-a3b:free`) registrados em `ModelRegistry.custom_models`, 1 retry por lote, sem default neutral (unparsed).
+  - Agregação por bucket (`Aggregator`): buckets com n < 30 marcados como `insufficient` (fora da curva e do ΔS); frases com `posted_at: nil` entram no saldo total mas fora da curva.
+  - Relatório no Discord (`MessageBuilder`): sem anexo, chunk <= 1900 chars via `DiscordMessageChunker`, 5 números de honestidade (teto ~75%, TARa, unparsed, sem-data, buckets ignorados), 1 exemplo por classe com permalink, saldo por fonte e agregado.
+  - Orchestração sob demanda via `SentimentAnalysisJob` e 3 tools owner-only (`CreateSentimentTargetTool`, `RunSentimentAnalysisTool`, `SentimentStatusTool`).
+- **[2026-08-10]** Tarefa F6-A — busca por assunto nos canais Hackernews, Github e Polymarket (`lib/fetcher/channels/`) + ajustes no `Research::Signals` e `Research::Scorer`.
   - `Fetcher::Channels::X.search(query:, limit: 10)`: busca nativa no X com `f=live&src=typed_query`. Detecção do estado vazio legítimo via marcador `[data-testid="empty_state_header_text"]` (retorna `[]`); sem marcador, levanta `SearchFailed`. `SEARCH_BUDGET` e `TIMELINE_BUDGET` reduzidos para 30/h (4/min) mantendo teto da conta do dono em ~60/h. Mensagem de `RateLimited` inclui o escopo (`[timeline]` / `[search]`).
   - `PlatformSearchTool`: exige `@` explícito para perfis (ex: `@jack` -> `X.timeline`); termos sem `@` (frases ou palavras soltas ex: `bitcoin` ou `ruby rails`) acionam `X.search`.
   - Prompts do chatbot (`chatbot.yml`) e MCP tool (`platform_search.rb`) atualizados para refletir a busca por assunto no X.
-- **[2026-08-10]** Tarefa F6-A — busca por assunto nos canais Hackernews, Github e Polymarket (`lib/fetcher/channels/`) + ajustes no `Research::Signals` e `Research::Scorer`.
   - `Hackernews.search(query:, limit: 10)`: busca em Algolia API com filtro `created_at_i>30d_epoch`, devendo `comments` (num_comments), `points`, `author`, `created_at` ISO e `external_url` separado.
   - `Github.search(query:, limit: 10)`: busca REST API `/search/issues` com `created:>=30d`, `sort=reactions`, achatamento de `reactions` (total_count Numeric) e fallback gracioso `[]` para 403/429/5xx.
   - `Polymarket.search(query:, limit: 10)`: busca em Gamma API `/events?search=<query>` devolvendo `volume`, `liquidity`, `created_at` e fallback `[]` em 4xx/mudança de schema.
@@ -238,6 +244,7 @@ rg "<palavra-chave do problema>" docs/MEMORY.md
 | Data | Ação | Seção Afetada |
 |------|------|---------------|
 | 2026-08-29 | Implementação da Frente C: deduplicação de alertas de scraping por transição de incidente (`AlertThrottler`, `ScrapingFailureAlertJob`, `ScrapeYoutubeJob`). | Contexto Ativo, Padrões Ratificados |
+| 2026-08-10 | Implementação da Fase 1 do Pipeline de Análise de Sentimento (migration 4 tabelas, Reddit+X sources, Classifier 3-way com snapshot fixo free, Aggregator por bucket, MessageBuilder com 5 números e 1 exemplo/classe, SentimentAnalysisJob e 3 tools owner-only). | Contexto Ativo |
 | 2026-08-10 | Implementação da Tarefa F6-A (`Hackernews.search`, `Github.search`, `Polymarket.search`, pesos/aliases em `Signals`, desempate em `Scorer`). | Contexto Ativo |
 | 2026-08-10 | Implementação do pipeline F6-C (`Last30DaysTopicJob`, `Last30DaysDigestJob`, `Last30Days::MessageBuilder`, dedupe `TopicDelivery`). | Contexto Ativo |
 | 2026-08-10 | Implementação da Tarefa F3 (PostScorer, ScorePostsJob, WeeklyDigestJob reescrito com chunking, shorts em YoutubeScraperService, post_snapshots na coleta com fuso SP e poda 180d). | Contexto Ativo |
@@ -260,6 +267,9 @@ rg "<palavra-chave do problema>" docs/MEMORY.md
 | 2026-08-10 | Fase 3 implementada e revisada: fusão RRF + clustering (`lib/research/fusion.rb`, `lib/research/cluster.rb`). Decisão de escala registrada (local_relevance como score de trabalho, rrf para ordenação). Entity-cluster da Fase 4 adiado (depende de entity_extract). | Contexto Ativo, Padrões Ratificados, Lições Aprendidas |
 | 2026-08-10 | Atualização da busca por assunto no X: X.search com marcador de estado vazio `empty_state_header_text`, SEARCH_BUDGET/TIMELINE_BUDGET (30/h), scope em RateLimited e fronteira @perfil/assunto em PlatformSearchTool. | Contexto Ativo, Padrões Ratificados |
 | 2026-08-31 | Implementação da busca X via GraphQL (`XGraphql`, `RefreshXQueryIdsJob`, HostRateLimiter scope graphql_search). | Contexto Ativo, Padrões Ratificados |
+| 2026-08-10 | 2ª rodada de correções na Fase 1 do pipeline de sentimento: montagem completa de janelas no frozen_spec do Job/Collector com descarte em rejected_count, escada de modelos LLM por lote com AllModelsFailed + cota diária (150 req/dia), pacing do Reddit 35s sem pré-incremento do HostRateLimiter, interleave entre fontes, validação estrita de IDs e status delivery_failed se canal digest for nulo. | Contexto Ativo, Padrões Ratificados |
+| 2026-08-10 | 3ª rodada de correções na Fase 1 do pipeline de sentimento: remoção incondicional da ramificação allow_paid (AllModelsFailed sempre que a escada free esgota), janela efetiva iniciada com started_at + 1.minute e filtro estrito p_time > w_end, cota diária atômica via SentimentDailyQuota com row lock, pacing do Reddit por leituras efetivas e suite completa de testes de regressão (1 fonte, 6º alvo via tool, job integrado com Collector real). | Contexto Ativo, Padrões Ratificados |
+| 2026-08-10 | 4ª rodada de correções na Fase 1 do pipeline de sentimento: substituição da transação com row lock em SentimentDailyQuota por UPDATE condicional atômico (insert_all idempotente ON CONFLICT DO NOTHING + update_all count < limit) e teste concorrente de 8 threads com barreira, PRAGMA busy_timeout = 10000 e validação de cota estrita sem erros de banco. | Contexto Ativo, Padrões Ratificados |
 
 ---
 
