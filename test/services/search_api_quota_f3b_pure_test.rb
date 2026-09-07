@@ -38,34 +38,38 @@ end
 require_relative "../../app/models/search_api_quota"
 
 class SearchApiQuotaF3bPureTest < Minitest::Test
+  # FIX (07/09/2026, CI seed 3709): mesmo problema do search_api_quota_test.rb —
+  # estabelecer ActiveRecord::Base -> :memory: aqui envenena o pool GLOBAL para o
+  # resto da suíte (724 errors "Could not find table" no CI do PR #44, reproduzido
+  # na main pura). No modo SUÍTE (bin/rails test), usa a conexão padrão (a tabela
+  # existe no db/schema.rb da main). No modo STANDALONE (ruby ...), não há Rails:
+  # conecta o MODELO a um pool próprio :memory: — sem tocar o pool global de AR.
   def setup
-    unless ActiveRecord::Base.connected?
-      ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
-    end
-
-    unless ActiveRecord::Base.connection.table_exists?(:search_api_quotas)
-      ActiveRecord::Schema.define do
-        create_table :search_api_quotas, force: true do |t|
-          t.string :api_name, null: false
-          t.string :month, null: false
-          t.integer :count, null: false, default: 0
-          # F3b: origem opcional na linha canônica. Quando nil, é a linha
-          # "sem origem" que faz o teto (mantemos o índice único). Não criamos
-          # linhas separadas por origem — colunas de contador cobrem isso.
-          t.string :origin
-          t.integer :count_discord, null: false, default: 0
-          t.integer :count_mcp, null: false, default: 0
-          t.timestamps
-          t.index %i[api_name month], name: "index_search_api_quotas_on_api_name_and_month", unique: true
-        end
+    unless defined?(Rails)
+      conectado = begin
+        SearchApiQuota.connection_pool.connected?
+      rescue StandardError
+        false
+      end
+      unless conectado
+        SearchApiQuota.establish_connection(adapter: "sqlite3", database: ":memory:")
+      end
+      SearchApiQuota.connection.create_table :search_api_quotas, force: true do |t|
+        t.string :api_name, null: false
+        t.string :month, null: false
+        t.integer :count, null: false, default: 0
+        t.string :origin
+        t.integer :count_discord, null: false, default: 0
+        t.integer :count_mcp, null: false, default: 0
+        t.timestamps
+        t.index %i[api_name month], name: "index_search_api_quotas_on_api_name_and_month", unique: true
       end
     end
-
-    SearchApiQuota.delete_all if ActiveRecord::Base.connected? && ActiveRecord::Base.connection.table_exists?(:search_api_quotas)
+    SearchApiQuota.delete_all if SearchApiQuota.table_exists?
   end
 
   def teardown
-    SearchApiQuota.delete_all if ActiveRecord::Base.connected? && ActiveRecord::Base.connection.table_exists?(:search_api_quotas)
+    SearchApiQuota.delete_all if SearchApiQuota.table_exists?
   end
 
   # ── Schema / defaults ──────────────────────────────────────────────────────
