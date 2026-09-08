@@ -22,8 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # transforma `>` em redirecionamento e o pip nunca as vê (mesmo bug que já
 # matou pisos de versão antes do PR #173). O COPY garante que apenas o
 # arquivo docker/requirements.txt do contexto (a raiz do repo) é usado pelo pip.
-# `camoufox` é pinado EXATO (0.5.4) — a lib decide qual build do Firefox o
-# `camoufox fetch` abaixo baixa (medido: 0.5.4 → browsers/official/152.0.4-beta.28).
+# `camoufox` é pinado EXATO (0.5.6) — a lib decide qual build do Firefox o
+# `camoufox fetch` abaixo baixa (medido: 0.5.6 → browsers/official/152.0.4-beta.30).
 COPY docker/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
