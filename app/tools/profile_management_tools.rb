@@ -2,6 +2,7 @@
 
 require 'securerandom'
 require 'timeout'
+require 'json'
 
 class ManagementToolBase < ToolBase
   HANDLE_RULES = {
@@ -243,6 +244,15 @@ class RemoveProfileTool < ManagementToolBase
     return error("Perfil não encontrado: #{identifier}") if profile.nil?
 
     formatted = format_profile(profile)
+    audit_payload = {
+      id: profile.id,
+      platform: profile.platform,
+      platform_username: profile.platform_username,
+      posts_count: profile.social_posts.count,
+      snapshots_count: profile.profile_snapshots.count,
+      actor: Thread.current[:cleitin_actor]
+    }
+    Rails.logger.info("[RemoveProfileTool] #{JSON.generate(audit_payload)}")
     profile.destroy!
 
     success(formatted.merge(status: 'removed'))

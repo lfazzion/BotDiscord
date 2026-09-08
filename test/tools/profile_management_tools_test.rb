@@ -411,6 +411,33 @@ class ProfileManagementToolsTest < ActiveSupport::TestCase
     assert_includes res[:reason], 'Erro ao remover'
   end
 
+  test 'remove_profile grava log de auditoria estruturado antes do destroy' do
+    profile = create(:social_profile, :twitter, platform_username: 'audit_rm_user')
+    create_list(:social_post, 3, social_profile: profile)
+    create_list(:profile_snapshot, 2, social_profile: profile)
+    profile_id = profile.id
+    username = profile.platform_username
+
+    logs = []
+    Rails.logger.stubs(:info).with { |msg| logs << msg.to_s; true }
+
+    tool = RemoveProfileTool.new
+    res = tool.execute(identifier: 'audit_rm_user')
+
+    assert_equal :success, res[:status]
+    capturado = logs.find { |linha| linha.include?('posts_count') }
+    assert capturado, 'esperava log com prefixo [RemoveProfileTool]'
+    assert_includes capturado, '[RemoveProfileTool]'
+
+    payload = JSON.parse(capturado.sub(/\A\[RemoveProfileTool\]\s*/, ''))
+    assert_equal profile_id, payload['id']
+    assert_equal username, payload['platform_username']
+    assert_equal 3, payload['posts_count']
+    assert_equal 2, payload['snapshots_count']
+    assert payload.key?('actor')
+    refute_nil payload['actor']
+  end
+
   # ── 5. PromoteProspectTool ──────────────────────────────────────────────────
 
   test 'promote_prospect promove DiscoveredProfile a SocialProfile e enfileira coleta' do

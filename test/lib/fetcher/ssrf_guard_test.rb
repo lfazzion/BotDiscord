@@ -177,4 +177,15 @@ class Fetcher::SsrfGuardTest < ActiveSupport::TestCase
       Fetcher::SsrfGuard.validate!("http://searxng:8080/")
     end
   end
+
+  test "ensure_ip_allowed! bloqueia faixas adicionais IPv4 e IPv6 (#29-4) e permite IP publico de controle" do
+    blocked = %w[192.88.99.1 198.18.0.1 64:ff9b::1 64:ff9b:1::1 2002::1 2001::1 2001:10::1 2001:20::1 100::1]
+    blocked.each do |ip_str|
+      error = assert_raises(Fetcher::SsrfGuard::Blocked) do
+        Fetcher::SsrfGuard.send(:ensure_ip_allowed!, IPAddr.new(ip_str))
+      end
+      assert_match(/privado|interno/i, error.reason)
+    end
+    assert_nil Fetcher::SsrfGuard.send(:ensure_ip_allowed!, IPAddr.new("8.8.8.8"))
+  end
 end
