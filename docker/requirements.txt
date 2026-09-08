@@ -1,4 +1,4 @@
-nodriver>=0.0.35
+nodriver>=0.50.3
 camoufox==0.5.6
 httpx>=0.27.0
 aiohttp>=3.10.0
