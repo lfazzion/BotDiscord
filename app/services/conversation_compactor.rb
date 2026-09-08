@@ -37,6 +37,11 @@ class ConversationCompactor
   # resumo antes mesmo dela terminar.
   TRANSCRIPT_SAFETY_RATIO = 0.7
   TRUNCATION_MARKER = "[...truncado...]"
+  TEMPLATE_DELIMITERS = [
+    "--- INÍCIO DA CONVERSA ---",
+    "--- FIM DA CONVERSA ---"
+  ].freeze
+  DELIMITER_REPLACEMENT = "[elidido: delimitador]"
 
   # Padrões óbvios de credencial. É defesa em profundidade: o prompt já manda
   # redigir, mas prompt é pedido e isto é garantia.
@@ -304,9 +309,24 @@ class ConversationCompactor
       summary_link&.provider
     end
 
+    def serialize_content(content)
+      return "" if content.blank?
+
+      content.to_s.split("\n", -1).map.with_index do |line, index|
+        sanitized = if TEMPLATE_DELIMITERS.include?(line.strip)
+                      DELIMITER_REPLACEMENT
+                    else
+                      line.gsub("<<<<<<<", DELIMITER_REPLACEMENT)
+                          .gsub("=======", DELIMITER_REPLACEMENT)
+                          .gsub(/--- (?:INÍCIO|FIM) DA CONVERSA ---/i, DELIMITER_REPLACEMENT)
+                    end
+        index.zero? ? sanitized : "  #{sanitized}"
+      end.join("\n")
+    end
+
     def transcript_line(message)
       rotulo = message.user? ? (message.discord_username.presence || "usuario") : "assistente"
-      "#{rotulo}: #{message.content}"
+      "#{rotulo}: #{serialize_content(message.content)}"
     end
 
     # Monta o transcript mandado ao resumidor, truncado a uma fração segura da
@@ -379,7 +399,7 @@ class ConversationCompactor
       falas = messages.select(&:user?)
       return cabecalho.chomp if falas.empty?
 
-      pares = falas.map { |message| [message, "- #{message.discord_username.presence || 'usuario'}: #{message.content}"] }
+      pares = falas.map { |message| [message, "- #{message.discord_username.presence || 'usuario'}: #{serialize_content(message.content)}"] }
       total = pares.sum { |_, linha| linha.length + 1 }
       orcamento = FALLBACK_MAX_CHARS - cabecalho.length
       linhas = total <= orcamento ? pares : truncate_lines_evenly(pares, orcamento)
