@@ -26,6 +26,68 @@ class DockerfilePythonTest < ActiveSupport::TestCase
                  "3.14 quebra o nodriver (>= 0.48 SyntaxError em cdp/network.py:1345)")
   end
 
+  test "requirements vem de docker/requirements.txt via COPY (fonte única)" do
+    # A fonte unica de pins Python é docker/requirements.txt, copiada pelo
+    # Dockerfile.python via COPY. Isso evita drift entre o arquivo da raiz
+    # (morto) e o RUN inline do Dockerfile.
+    assert_match(/COPY\s+\S*docker\/requirements\.txt\s+\S+/, content,
+                 "faltou COPY docker/requirements.txt para /tmp/requirements.txt (ou similar)")
+  end
+
+  test "pip install usa -r (nenhuma spec inline de pacote no RUN pip)" do
+    # Se alguém colar um requisito inline no RUN pip, o pip recebe só o nome
+    # e o shell transforma > em redirecionamento, ignorando o piso de versão.
+    # O bloco RUN pip install deve ser apenas:
+    #   RUN pip install --no-cache-dir -r /tmp/requirements.txt
+    pip_block = content[/^RUN\s+pip\s+install.*?\n/m]
+    assert pip_block, "bloco RUN pip install não encontrado em #{DOCKERFILE_PATH}"
+    refute_match(/pip install\s+[^\n]*\"?[a-zA-Z][a-zA-Z0-9_-]*[<=>~]/, pip_block,
+                 "especificação de pacote inline no RUN pip; use docker/requirements.txt")
+    assert_match(/pip install.*-r\s+/, pip_block,
+                 "RUN pip install deve usar flag -r para ler docker/requirements.txt")
+  end
+
+  test "docker/requirements.txt existe e contém pins de camoufox e pypdf" do
+    req_path = Rails.root.join("docker/requirements.txt")
+    assert File.exist?(req_path), "docker/requirements.txt deve existir como fonte única"
+    req_content = File.read(req_path)
+    assert_match(/camoufox==/, req_content,
+                 "docker/requirements.txt deve pinar camoufox com ==")
+    assert_match(/pypdf==/, req_content,
+                 "docker/requirements.txt deve pinar pypdf com ==")
+  end
+
+  test "requirements.txt morto da raiz não volta" do
+    # O arquivo requirements.txt na raiz era usado por ninguém (dead file).
+    # Dependabot pip apontava para ele e o CI não constrói python-scraper.
+    root_req = Rails.root.join("requirements.txt")
+    refute File.exist?(root_req),
+           "requirements.txt na raiz deve ser removido; fonte única é docker/requirements.txt"
+  end
+
+  test "dependabot pip em /docker com ignore de camoufox e playwright" do
+    # Dependabot precisa monitorar docker/requirements.txt para alertas de CVE
+    # em httpx, aiohttp, pypdf, nodriver, yt-dlp, curl_cffi.
+    # camoufox e playwright são ignorados (fingerprint/Juggler; issue #653).
+    dep_path = Rails.root.join(".github/dependabot.yml")
+    assert File.exist?(dep_path), ".github/dependabot.yml deve existir"
+    dep_content = File.read(dep_path)
+    assert_match(/package-ecosystem:\s*"pip"/, dep_content,
+                 "bloco pip não encontrado no dependabot.yml")
+    pip_section = dep_content[/- package-ecosystem:\s*"pip".*?(?=\n  - |\z)/m]
+    assert pip_section, "não foi possível extrair o bloco pip do dependabot.yml"
+    assert_match(/directory:\s*"\/docker"/, pip_section,
+                 "bloco pip deve ter directory: \"/docker\"")
+    assert_match(/ignore:/, pip_section,
+                 "bloco pip deve ter lista ignore")
+    assert_match(/dependency-name:\s*"camoufox"/, pip_section,
+                 "ignore deve conter camoufox")
+    assert_match(/dependency-name:\s*"playwright"/, pip_section,
+                 "ignore deve conter playwright")
+    refute_match(/labels:/, pip_section,
+                 "labels não existem no GitHub; remover do bloco pip")
+  end
+
 
   test "instala o runtime GTK que o Firefox do camoufox linka" do
     # `libmozgtk.so` linka libgtk-3.so.0 e libgdk-3.so.0. `playwright install
@@ -78,8 +140,11 @@ class DockerfilePythonTest < ActiveSupport::TestCase
     # → browsers/official/152.0.4-beta.28). Sem pin, dois builds da mesma árvore
     # produzem fingerprints diferentes — o mesmo modo de falha que fez a searxng
     # ser pinada por digest em 05/08/2026.
-    assert_match(/["']camoufox==\d+\.\d+(\.\d+)?["']/, content,
-                 "camoufox precisa de versão exata e entre aspas")
+    req_path = Rails.root.join("docker/requirements.txt")
+    assert File.exist?(req_path), "docker/requirements.txt deve existir"
+    req_content = File.read(req_path)
+    assert_match(/camoufox==\d+\.\d+(\.\d+)?/, req_content,
+                 "camoufox precisa de versão exata com == em docker/requirements.txt")
   end
 
   test "o CMD sobe a API do sidecar, não um servidor de diretório" do

@@ -28,6 +28,8 @@ não cobre as duas necessidades abaixo, e sem elas o engine nunca sobe.
   canvas baterem com o SO spoofado — podá-las troca peso por fingerprint
   inconsistente.
 
+Fonte das libs Python do sidecar: docker/requirements.txt (COPY no Dockerfile.python).
+
 Detalhes e o contrato de saída do script: `scripts/python/CONTEXT.md`.
 
 ## Publicação de Portas
