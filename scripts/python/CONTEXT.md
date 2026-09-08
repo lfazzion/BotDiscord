@@ -111,7 +111,7 @@ deploy que quebra.
 2. **Saída JSON**: Todo script deve retornar JSON no stdout (parseável pelo Ruby)
 3. **Erros em stderr**: Logs de erro vão para stderr, nunca misturar com JSON de saída
 4. **Variáveis de ambiente**: URLs e configs vêm via env vars (não hardcoded)
-5. **Requirements**: `requirements.txt` na raiz do projeto. Instalar com `pip install -r requirements.txt` no container Python
+5. **Requirements**: `docker/requirements.txt` (fonte única, copiada pelo Dockerfile.python via COPY). Instalar com `pip install -r` no container Python. Fora do container, a raiz é Rails.
  6. **Timeout**: Scripts devem ter timeout implícito (o Ruby bridge mata o processo após timeout)
 
 ## Cross-References

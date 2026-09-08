@@ -14,7 +14,6 @@ Infraestrutura de containers do projeto.
 
 O camoufox é Firefox, não Chromium — `playwright install chromium --with-deps`
 não cobre as duas necessidades abaixo, e sem elas o engine nunca sobe.
-(As duas linhas abaixo descrevem o `Dockerfile.python` que chega junto do PR de scraping; o arquivo atual ainda não as tem.)
 
 - **`libgtk-3-0` no `apt-get`** — `libmozgtk.so` linka `libgtk-3.so.0` e
   `libgdk-3.so.0`; sem elas, `Couldn't load XPCOM`. Medido com `ldd` em
@@ -27,6 +26,8 @@ não cobre as duas necessidades abaixo, e sem elas o engine nunca sobe.
   fonte de macOS/Windows. Essas fontes são o que faz a medição de fonte e o
   canvas baterem com o SO spoofado — podá-las troca peso por fingerprint
   inconsistente.
+
+Fonte das libs Python do sidecar: docker/requirements.txt (COPY no Dockerfile.python).
 
 Detalhes e o contrato de saída do script: `scripts/python/CONTEXT.md`.
 

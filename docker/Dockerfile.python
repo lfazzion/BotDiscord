@@ -17,30 +17,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# ASPAS OBRIGATÓRIAS em todo requisito. Sem elas `camoufox>=2.0.0` não é
-# requisito nenhum: `>` é redirecionamento de shell, o pip recebe só `camoufox` e
-# o shell cria um arquivo vazio chamado `=2.0.0`. Medido em 05/08/2026 na imagem
-# construída: `ls /` trazia `=0.0.35`, `=0.27.0`, `=2.0.0`, `=3.10.0` e `=0.7.0`
-# — este último com 14 KB, que era o stdout INTEIRO do pip engolido pelo
-# redirecionamento —, e `pip show camoufox` respondia 0.5.4. Ou seja: nenhum piso
-# de versão desta imagem estava valendo, e o piso declarado do camoufox (2.0.0)
-# nem existe no PyPI, então a linha só não quebrava o build porque o pip nunca a
-# via.
-#
-# `camoufox` é pinado EXATO, não por piso: é a lib que decide qual build do
-# Firefox o `camoufox fetch` abaixo baixa (medido: 0.5.4 →
-# browsers/official/152.0.4-beta.28). Sem pin, dois builds da mesma árvore dão
-# navegadores diferentes — e fingerprint é o produto deste container. Mesmo
-# motivo do digest da searxng no docker-compose.yml.
-RUN pip install --no-cache-dir \
-    "nodriver>=0.0.35" \
-    "camoufox==0.5.4" \
-    "httpx>=0.27.0" \
-    "aiohttp>=3.10.0" \
-    "playwright" \
-    "yt-dlp" \
-    "curl_cffi>=0.8" \
-    "pypdf==6.15.0"
+# As dependências Python estão centralizadas em docker/requirements.txt (fonte
+# única). Isso evita drift: se o RUN pip receber specs inline, o shell
+# transforma `>` em redirecionamento e o pip nunca as vê (mesmo bug que já
+# matou pisos de versão antes do PR #173). O COPY garante que apenas o
+# arquivo docker/requirements.txt do contexto (a raiz do repo) é usado pelo pip.
+# `camoufox` é pinado EXATO (0.5.4) — a lib decide qual build do Firefox o
+# `camoufox fetch` abaixo baixa (medido: 0.5.4 → browsers/official/152.0.4-beta.28).
+COPY docker/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 RUN playwright install chromium --with-deps
 

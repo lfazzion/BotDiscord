@@ -23,7 +23,7 @@ updates:
         exclude-patterns: ["rails", "activerecord", "activesupport", "actionpack", "actionview", "activejob", "actionmailer", "actioncable", "activestorage", "railties", "solid_queue", "solid_cache"]
     labels: ["dependencies", "bundler"]
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/docker"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -34,7 +34,9 @@ updates:
       python-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
-    labels: ["dependencies", "python"]
+    ignore:
+      - dependency-name: "camoufox"
+      - dependency-name: "playwright"
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
