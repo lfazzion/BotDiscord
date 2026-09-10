@@ -389,6 +389,20 @@ class Fetcher::BrowserSessionTest < ActiveSupport::TestCase
     assert_equal :bloco_executado, res
   end
 
+  # (iii) do laudo — a queda de 35s medida. O `Timeout::Error` (stdlib) que sai
+  # do `go_to` NÃO é pego pelo rescue interno (só `Ferrum::TimeoutError` e
+  # `Ferrum::PendingConnectionsError`), sobe até o rescue de timeout do método,
+  # que agora chama `reset_browser!` antes de propagar `RenderTimeout`. Sem
+  # este teste o patch ficaria verde e o zumbi continuaria travando a sessão.
+  test "(iii) timeout no go_to chama reset_browser! e propaga RenderTimeout" do
+    @page.stubs(:go_to).raises(Timeout::Error, "excedeu o tempo de render")
+    Fetcher::PageFetcher.expects(:reset_browser!).once
+
+    assert_raises(Fetcher::BrowserSession::RenderTimeout) do
+      Fetcher::BrowserSession.with_page("https://www.youtube.com/watch?v=x") { |_p| :ok }
+    end
+  end
+
   test "BrowserSession entrega remaining deadline durante execucao do bloco e limpa no ensure" do
     remaining_durante_bloco = nil
     Fetcher::BrowserSession.with_page("https://www.youtube.com/watch?v=x") do |_p|

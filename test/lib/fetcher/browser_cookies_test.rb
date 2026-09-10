@@ -114,4 +114,58 @@ class Fetcher::BrowserCookiesTest < ActiveSupport::TestCase
 
     assert_equal({ postos: 1, confirmados: 1 }, resultado)
   end
+
+  # A sessão do target CDP morre ("Session with given id not found") — sinal
+  # ESTREITO: só ele (e DEAD_SESSION_ERRORS) reconstrói o browser. O erro é um
+  # Ferrum::BrowserError no construtor HASH real (errors.rb:88-94).
+  class ZumbiBrowser
+    ZUMBI_ERROR = Ferrum::BrowserError.new("message" => "Session with given id not found.")
+    def cookies
+      self
+    end
+
+    def all
+      raise ZUMBI_ERROR
+    end
+  end
+
+  test "(i) cookies.for reconstrói o browser e retenta quando a sessão CDP morre (sinal estreito)" do
+    saudavel = FakeBrowser.new([Cookie.new("SID", "abc", ".youtube.com", "/")])
+    # 1ª chamada (dentro do track) pega o zumbi e levanta; a 2ª volta já no browser saudável.
+    Fetcher::PageFetcher.stubs(:browser).returns(ZumbiBrowser.new, saudavel)
+    Fetcher::PageFetcher.expects(:reset_browser!).once
+
+    lidos = Fetcher::BrowserCookies.for("youtube.com")
+
+    assert_equal ["SID"], lidos.map { |c| c["name"] },
+                 "a 2ª tentativa deve devolver o cookie lido no browser reconstruído"
+  end
+
+  test "(ii) cookies.for com a sessão morta nas duas vezes devolve [], nunca exceção" do
+    Fetcher::PageFetcher.stubs(:browser).returns(ZumbiBrowser.new, ZumbiBrowser.new)
+    Fetcher::PageFetcher.expects(:reset_browser!).once # só a 1ª retentativa reseta
+
+    assert_empty Fetcher::BrowserCookies.for("youtube.com"),
+                 "o contrato 'nunca exceção' é mantido: a 2ª falha loga e devolve []"
+  end
+
+  test "(iv) erro CDP que não é o sinal estreito NÃO reconstrói o browser" do
+    # "Sanitizing cookie failed" e os erros de JS caem no pai BrowserError mas
+    # NÃO no sinal — reconstruir aqui condenaria a instância compartilhada
+    # (MAX_INFLIGHT). `.raises` (não `.returns`): é o browser quem levanta.
+    Fetcher::PageFetcher.stubs(:browser)
+                       .raises(Ferrum::BrowserError.new("message" => "Sanitizing cookie failed"))
+    Fetcher::PageFetcher.expects(:reset_browser!).never
+
+    assert_empty Fetcher::BrowserCookies.for("youtube.com")
+  end
+
+  test "(iv) JavaScriptError NÃO reconstrói o browser" do
+    js = Ferrum::JavaScriptError.new("exception" => { "className" => "TypeError",
+                                                       "description" => "cannot read property of undefined" })
+    Fetcher::PageFetcher.stubs(:browser).raises(js)
+    Fetcher::PageFetcher.expects(:reset_browser!).never
+
+    assert_empty Fetcher::BrowserCookies.for("youtube.com")
+  end
 end

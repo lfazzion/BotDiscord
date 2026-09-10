@@ -27,27 +27,36 @@ module Fetcher
       # Devolve [] quando não há sessão (ou nem browser) — quem decide se isso é
       # erro é o canal, que ainda pode cair no jar.
       def for(domain)
+        tentativa = 0
         alvo = normalize(domain)
 
         # Lida com o browser DENTRO do ciclo de vida (track_in_flight): sem o
         # contador, um reset/quit pode rodar entre a obtenção da referência e o
         # comando CDP — referência obtida não é posse do ciclo de vida (Sol r1,
         # item 3 do PR #148).
-        PageFetcher.track_in_flight do
-          PageFetcher.browser.cookies.all.each_value.filter_map do |cookie|
-            next unless matches?(cookie.domain, alvo)
+        begin
+          PageFetcher.track_in_flight do
+            PageFetcher.browser.cookies.all.each_value.filter_map do |cookie|
+              next unless matches?(cookie.domain, alvo)
 
-            {
-              "name"   => cookie.name.to_s,
-              "value"  => cookie.value.to_s,
-              "domain" => cookie.domain.to_s,
-              "path"   => cookie.path.to_s.presence || "/"
-            }
+              {
+                "name"   => cookie.name.to_s,
+                "value"  => cookie.value.to_s,
+                "domain" => cookie.domain.to_s,
+                "path"   => cookie.path.to_s.presence || "/"
+              }
+            end
           end
+        rescue StandardError => e
+          if PageFetcher.sessao_morta?(e) && tentativa < 1
+            tentativa += 1
+            Rails.logger.warn "[Fetcher::BrowserCookies] sessão do Chrome morta (#{e.class}: #{e.message}) — reconstruindo browser e tentando de novo"
+            PageFetcher.reset_browser!
+            retry
+          end
+          Rails.logger.warn "[Fetcher::BrowserCookies] sessão do Chrome indisponível: #{e.class}: #{e.message}"
+          []
         end
-      rescue StandardError => e
-        Rails.logger.warn "[Fetcher::BrowserCookies] sessão do Chrome indisponível: #{e.class}: #{e.message}"
-        []
       end
 
       # Injeta cookies no contexto PADRÃO do Chrome em execução.

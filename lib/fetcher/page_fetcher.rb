@@ -200,6 +200,23 @@ module Fetcher
         false
       end
 
+      # Sinal ESTREITO de sessão morta, usado em `fetch_via_ferrum` e em
+      # `BrowserCookies.for` — em `BrowserSession.with_page` o reset acontece no
+      # rescue de timeout, por conta própria, sem passar pelo predicado.
+      #
+      # Nunca usa a classe-mãe `Ferrum::BrowserError` inteira: ela é pai de
+      # JavaScriptError, NodeNotFoundError, NoExecutionContextError e é o fallback
+      # de TODO erro CDP não mapeado (inclusive "Sanitizing cookie failed") —
+      # resetar o browser compartilhado nesses casos condenaria a instância em
+      # MAX_INFLIGHT (app+jobs+discord-bot). O sinal útil aqui é a MENSAGEM do
+      # target CDP morto ("Session with given id not found"), alinhada ao que o
+      # Ferrum já faz para o primo "No target with given id found" (NoSuchPageError).
+      def sessao_morta?(erro)
+        (DEAD_SESSION_ERRORS.any? { |k| erro.is_a?(k) }) ||
+          (erro.is_a?(Ferrum::BrowserError) &&
+            erro.message.to_s.include?("Session with given id not found"))
+      end
+
       def hard_domains
         @hard_domains ||= load_yaml("hard_domains.yml", "hard_domains")
       end
@@ -467,7 +484,9 @@ module Fetcher
     # que o chrome cai depois da sonda e antes do render.
     def fetch_via_ferrum(uri)
       render_via_ferrum(uri)
-    rescue *DEAD_SESSION_ERRORS => e
+    rescue StandardError => e
+      raise unless self.class.sessao_morta?(e)
+
       raise if @browser_factory # browser injetado em teste: não é nosso para descartar
 
       Rails.logger.warn "[Fetcher::PageFetcher] sessão morta (#{e.class}) — reconstruindo browser e tentando de novo"

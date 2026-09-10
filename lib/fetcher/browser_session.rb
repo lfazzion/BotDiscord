@@ -111,6 +111,10 @@ module Fetcher
               end
             end
           rescue Timeout::Error, Ferrum::TimeoutError, Ferrum::PendingConnectionsError
+            # A sessão envenenada trava o timeout inteiro (a queda de 35s
+            # medida): reconstrói o browser para a próxima chamada. Sem retry
+            # aqui — o chamador tem orçamento próprio (ExtractService 40s).
+            PageFetcher.reset_browser!
             raise RenderTimeout
           ensure
             Thread.current[:fetcher_deadline] = nil
