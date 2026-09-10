@@ -567,19 +567,51 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     assert_equal true, fake_context.disposed, "contexto deve ser descartado no timeout de create_page"
   end
 
-  test "discard_locked! chama reset ANTES de quit mesmo se reset levantar excecao (Item 2)" do
-    fake_browser = FakeBrowser.new
+  test "discard_locked! fecha o WS local (quit) SEM reset/dispose no browser (HOTFIX B2)" do
+    # Laudo v2 do perito (B2): @browser.reset acionava Target.disposeBrowserContext
+    # sobre contextos GLOBAIS do Chrome compartilhado app+jobs+discord-bot —
+    # o descarte derrubava render em voo do vizinho. O caminho de descarte só
+    # fecha o WS local (safe_quit). Se reset/dispose voltarem a rodar aqui, o
+    # dublê explodindo prova na hora (as chamadas também ficam em call_order).
+    fake_context = FakeContext.new(FakePage.new)
+    fake_browser = FakeBrowser.new(context: fake_context)
     fake_browser.define_singleton_method(:reset) do
       @call_order << :reset
-      raise StandardError, "falha simulada no reset"
+      @reset_called = true
+      raise StandardError, "reset rodou no caminho de descarte — proibido (HOTFIX B2)"
+    end
+    fake_context.define_singleton_method(:dispose) do
+      @disposed = true
+      raise StandardError, "contexto foi descartado no caminho de descarte — proibido (HOTFIX B2)"
     end
 
+    # Estado do descarte imediato: received == 0, instância condenada em cache.
     Fetcher::PageFetcher.instance_variable_set(:@browser, fake_browser)
+    Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
+
     Fetcher::PageFetcher.send(:discard_locked!)
 
-    assert_equal %i[reset quit], fake_browser.call_order
-    assert_equal true, fake_browser.quit_called, "quit deve rodar mesmo se reset falhar"
+    # O WS local foi fechado (safe_quit → browser.quit):
+    assert_equal true, fake_browser.quit_called,
+                 "safe_quit continua fechando o WS local no descarte"
+    # E reset/disposeBrowserContext NUNCA:
+    assert_equal false, fake_browser.reset_called,
+                 "reset não pode rodar no caminho de descarte (laudo v2, item B2)"
+    assert_equal false, fake_context.disposed,
+                 "contexto não pode ser descartado no caminho de descarte (vizinho)"
+    assert_equal %i[quit], fake_browser.call_order,
+                 "a única ação de descarte é o quit"
+    # A instância condenada sai limpa do cache: o próximo uso reconstrói.
     assert_nil Fetcher::PageFetcher.instance_variable_get(:@browser)
+    assert_nil Fetcher::PageFetcher.instance_variable_get(:@browser_started_at)
+    assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@pages_since_start)
+
+    # Esmagar "o próximo uso reconstrói": cache limpo → build_browser roda.
+    rebuilt = FakeBrowser.new
+    Fetcher::PageFetcher.expects(:build_browser).once.returns(rebuilt)
+    got = Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
+    assert_same rebuilt, got,
+                "o próximo uso reconstrói a instância (cache limpo após o descarte)"
   end
 
   test "contexts.create recebe disposeOnDetach: true (Item 3)" do
@@ -726,8 +758,8 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.stubs(:build_browser).returns(FakeBrowser.new)
     Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
     Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
-    assert_equal true, live_browser.reset_called,
-                 "reset deve rodar após o último holder soltar"
+    assert_equal false, live_browser.reset_called,
+                 "reset NÃO roda no descarte (HOTFIX B2: contextos globais atingem vizinhos); quem fecha o WS local é o quit"
     assert_equal true, live_browser.quit_called,
                  "quit deve rodar após o último holder soltar"
     assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
@@ -766,8 +798,8 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     Fetcher::PageFetcher.stubs(:build_browser).returns(FakeBrowser.new)
     Fetcher::PageFetcher.instance_variable_set(:@browser_received, 0)
     Fetcher::PageFetcher.track_in_flight { Fetcher::PageFetcher.browser }
-    assert_equal true, live_browser.reset_called,
-                 "reset deve rodar após o último holder soltar"
+    assert_equal false, live_browser.reset_called,
+                 "reset NÃO roda no descarte (HOTFIX B2: contextos globais atingem vizinhos); quem fecha o WS local é o quit"
     assert_equal true, live_browser.quit_called,
                  "quit deve rodar após o último holder soltar"
     assert_equal false, Fetcher::PageFetcher.instance_variable_get(:@pending_discard),
@@ -793,8 +825,8 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
                   "browser() deve devolver nova instância reconstruída quando dirty e in_flight <= 1"
       assert_equal false, Fetcher::PageFetcher.browser_dirty?,
                    "browser_dirty deve ser limpo após rebuild"
-      assert_equal true, live_browser.reset_called,
-                   "reset deve rodar no browser dirty anterior"
+      assert_equal false, live_browser.reset_called,
+                   "reset NÃO roda no descarte do browser dirty (HOTFIX B2); o quit fecha o WS local"
       assert_equal true, live_browser.quit_called,
                    "quit deve rodar no browser dirty anterior"
     end

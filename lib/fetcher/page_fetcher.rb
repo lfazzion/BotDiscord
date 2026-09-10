@@ -232,11 +232,13 @@ module Fetcher
         @pending_discard = false
         @browser_received = 0 if @browser
         if @browser
-          begin
-            @browser.reset
-          rescue StandardError => e
-            Rails.logger.warn "[Fetcher::PageFetcher] falha ao resetar browser antes do quit (#{e.class}: #{e.message})"
-          end
+          # HOTFIX B2 (laudo do perito, rodada v2): o descarte NAO faz mais a
+          # chamada de reset no browser aqui. Ferrum::Contexts#reset acionaria
+          # Target.disposeBrowserContext sobre contextos GLOBAIS do Chrome
+          # compartilhado (setDiscoverTargets/setAutoAttach valem para OUTROS
+          # processos) — o reset do app derrubava render em voo de jobs/discord-bot
+          # (a jusante: "target destroyed" / -32001). Só o WS local morre:
+          # safe_quit (o process.rb remoto nao tem pid → não derruba o container).
           safe_quit(@browser)
         end
         @browser = nil
