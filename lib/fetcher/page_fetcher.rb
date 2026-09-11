@@ -10,8 +10,9 @@ require_relative "bot_detection"
 require_relative "readability_injector"
 require_relative "host_rate_limiter"
 # `alive?` delega a sonda para `BrowserCookies.probe` (laudo r3 B5 / v2 B3):
-# a sonda usa a MESMA via da leitura de cookies (comando CDP no raiz, com
-# browserContextId do default_context). Sem este require, o caminho da sonda
+# a sonda usa a MESMA via da leitura de cookies (`Storage.getCookies` na raiz,
+# SEM `browserContextId`: a chave devolve -32602 — medicao-C-vias-producao.txt:
+# raiz sem id = OK, com id = -32602). Sem este require, o caminho da sonda
 # dava NameError em qualquer contexto que carregasse PageFetcher sem antes
 # carregar BrowserCookies. O ciclo de carga browser_cookies -> page_fetcher
 # EXISTE de fato (este require e o `require_relative "page_fetcher"` de
@@ -207,12 +208,14 @@ module Fetcher
       # `browser.version` + a MESMA chamada raiz da leitura de cookies
       # (laudo r3 B5 / v2 B3, item 1: se a leitura mudou, o probe também muda —
       # senão o probe ficaria apontando para o caminho instável e reconstruindo à
-      # toa). O comando CDP da sonda é o `Storage.getCookies` com o
-      # browserContextId do default_context, sem página nem sessionId.
+      # toa). O comando CDP da sonda é o `Storage.getCookies` na RAIZ, SEM
+      # `browserContextId` (mandar a chave é -32602: medicao-C-vias-producao.txt),
+      # sem página nem sessionId.
       def alive?(browser)
         # Sonda delega para o MESMO comando da leitura (laudo r3 B5 / v2 B3):
-        # `version` + `Storage.getCookies` com browserContextId, cliente raiz,
-        # SEM a página default (a origem do -32001). O timeout é de
+        # `version` + `Storage.getCookies` na raiz, SEM `browserContextId`
+        # (a chave é -32602: medicao-C-vias-producao.txt), SEM a página default
+        # (a origem do -32001). O timeout é de
         # `BrowserCookies.probe` (BROWSER_PROBE_TIMEOUT = 2s).
         Fetcher::BrowserCookies.probe(browser)
       end

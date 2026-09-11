@@ -146,11 +146,12 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
     end
 
     # A sonda `alive?` delega para `BrowserCookies.probe` (laudo r3 B5 / v2 B3),
-    # que roda `version` + o comando de storage (`browser.command`) com o
-    # `browserContextId` do `default_context`. Sem `command`/`default_context`
-    # no dublê, a sonda daria NoMethodError e devolveria `false` — descartando o
-    # browser vivo à toa e falsificando os testes de reaproveitamento. Modelamos
-    # o caminho NOVO para o browser ser considerado vivo.
+    # que roda `version` + o comando de storage (`browser.command`) na RAIZ, SEM
+    # `browserContextId` (a chave devolve -32602: medicao-C-vias-producao.txt).
+    # Sem `command` no dublê, a sonda daria NoMethodError e devolveria `false` —
+    # descartando o browser vivo à toa e falsificando os testes de
+    # reaproveitamento. Modelamos o caminho NOVO para o browser ser considerado
+    # vivo.
     def command(_cmd, **_params)
       { "cookies" => [] }
     end
@@ -937,7 +938,8 @@ assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
 
   # A leitura de cookies deixou de passar pela página default do Ferrum
   # (`browser.cookies.all`): hoje é comando CDP no cliente raiz
-  # (`Storage.getCookies` com o `browserContextId` do `default_context`). O
+  # (`Storage.getCookies` na RAIZ, SEM `browserContextId` — mandar a chave é
+  # -32602: medicao-C-vias-producao.txt). O
   # invariante que este teste protege NÃO mudou e continua sendo o ponto (Sol r1
   # item 3): a leitura de cookies não pode correr fora de `track_in_flight` — com
   # browser compartilhado e `MAX_INFLIGHT_PAGES`, o descarte/`quit` pode acontecer
@@ -954,7 +956,7 @@ assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
     # código, não a assinatura antiga.
     fake_cookies_manager.define_singleton_method(:all) do
       raise "a leitura principal NÃO pode passar por browser.cookies.all (página default) — " \
-            "o caminho novo é Storage.getCookies no cliente raiz com browserContextId"
+            "o caminho novo é Storage.getCookies no cliente raiz SEM browserContextId"
     end
 
     fake_cookies_manager.define_singleton_method(:set) do |**_opts|

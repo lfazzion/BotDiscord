@@ -13,11 +13,12 @@ class Fetcher::BrowserCookiesTest < ActiveSupport::TestCase
     def all = @lista.to_h { |c| [c.name, c] }
   end
 
-  # A leitura de cookies migrou para o cliente raiz (`Storage.getCookies` com
-  # `browserContextId` do `default_context`), SEM a página default (laudo r3 B5 /
-  # v2 B3). O dublê modela a API NOVA: `command` devolve os cookies em formato
-  # CDP (hash) e `default_context.id` é o `browserContextId`. O caminho antigo
-  # (`cookies.all`) foi mantido no dublê só para o fallback -32601.
+  # A leitura de cookies é a chamada RAIZ do CDP (`Storage.getCookies`), SEM
+  # `browserContextId` e SEM a página default (laudo r5). O jar que interessa é o
+  # IMPLÍCITO do perfil e só se lê OMITINDO o parâmetro: `default_context.id` é
+  # nil no ferrum 0.18 e o id que o `Target.getBrowserContexts` publica é
+  # RECUSADO com -32602 (medicao-C-vias-producao.txt:9,15). O dublê modela a API
+  # NOVA: `command` devolve os cookies em formato CDP (hash) e IGNORA os params.
   class FakeBrowser
     attr_reader :cookies
 
@@ -90,9 +91,9 @@ class Fetcher::BrowserCookiesTest < ActiveSupport::TestCase
 
     def initialize = @cookies = Espiao.new
 
-    # `load!` grava via `cookies.set` e confirma lendo de volta — o caminho de
-    # leitura é o cliente raiz (`command` com `browserContextId`). Devolve os
-    # cookies postados no formato CDP (hash), como o `Storage.getCookies` faria.
+    # `load!` grava via `cookies.set` e confirma lendo de volta — a leitura é a
+    # chamada RAIZ (`command` SEM `browserContextId`). Devolve os cookies
+    # postados no formato CDP (hash), como o `Storage.getCookies` faria.
     def command(_cmd, **_params)
       { "cookies" => @cookies.postos.map do |c|
           { "name" => c[:name], "value" => c[:value].to_s, "domain" => c[:domain], "path" => c[:path] }
