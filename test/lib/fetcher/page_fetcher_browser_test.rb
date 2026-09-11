@@ -3,6 +3,10 @@
 require "test_helper"
 require "stringio"
 require_relative "../../../lib/fetcher/page_fetcher"
+# A sonda `PageFetcher.alive?` delega para `BrowserCookies.probe` (laudo r3 B5 /
+# v2 B3): sem isto, este arquivo (que só puxa page_fetcher) teria NameError no
+# caminho da sonda e a reescreveria como falha — falsificando os resultados.
+require_relative "../../../lib/fetcher/browser_cookies"
 
 # Defeitos do segundo nível (escalada para o Chrome), com guarda para cada um.
 #
@@ -139,6 +143,20 @@ class Fetcher::PageFetcherBrowserTest < ActiveSupport::TestCase
       raise @version_error if @version_error
 
       "HeadlessChrome/131.0.0.0"
+    end
+
+    # A sonda `alive?` delega para `BrowserCookies.probe` (laudo r3 B5 / v2 B3),
+    # que roda `version` + o comando de storage (`browser.command`) com o
+    # `browserContextId` do `default_context`. Sem `command`/`default_context`
+    # no dublê, a sonda daria NoMethodError e devolveria `false` — descartando o
+    # browser vivo à toa e falsificando os testes de reaproveitamento. Modelamos
+    # o caminho NOVO para o browser ser considerado vivo.
+    def command(_cmd, **_params)
+      { "cookies" => [] }
+    end
+
+    def default_context
+      @default_context ||= Struct.new(:id).new("ctx_default")
     end
 
     def reset
@@ -917,15 +935,26 @@ assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
 "browser deve sofrer quit na saída da última thread com pending_discard"
   end
 
-  test "BrowserCookies.for e load! executam cookies.all/set envolvidos em track_in_flight (Sol r1 item 3)" do
-    fake_cookie = Struct.new(:name, :value, :domain, :path).new("auth", "tok123", "youtube.com", "/")
+  # A leitura de cookies deixou de passar pela página default do Ferrum
+  # (`browser.cookies.all`): hoje é comando CDP no cliente raiz
+  # (`Storage.getCookies` com o `browserContextId` do `default_context`). O
+  # invariante que este teste protege NÃO mudou e continua sendo o ponto (Sol r1
+  # item 3): a leitura de cookies não pode correr fora de `track_in_flight` — com
+  # browser compartilhado e `MAX_INFLIGHT_PAGES`, o descarte/`quit` pode acontecer
+  # no meio de uma leitura em uso. O que estava desatualizado era o observador: o
+  # dublê só modelava `cookies.all`, então o espião nunca disparava no caminho
+  # novo e o contador ficava em 0 (LACUNA 2 da lane A3).
+  test "BrowserCookies.for e load! executam a leitura CDP/set envolvidos em track_in_flight (Sol r1 item 3)" do
     fake_cookies_manager = Object.new
-    in_flight_during_all = nil
+    in_flight_during_leitura = nil
     in_flight_during_set = nil
 
+    # O caminho NOVO da leitura: comando no cliente raiz. É AQUI que o
+    # invariante tem de valer agora — o espião acompanha a chamada real do
+    # código, não a assinatura antiga.
     fake_cookies_manager.define_singleton_method(:all) do
-      in_flight_during_all = Fetcher::PageFetcher.instance_variable_get(:@in_flight)
-      { "auth" => fake_cookie }
+      raise "a leitura principal NÃO pode passar por browser.cookies.all (página default) — " \
+            "o caminho novo é Storage.getCookies no cliente raiz com browserContextId"
     end
 
     fake_cookies_manager.define_singleton_method(:set) do |**_opts|
@@ -935,6 +964,11 @@ assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
 
     fake_browser = Object.new
     fake_browser.define_singleton_method(:cookies) { fake_cookies_manager }
+    fake_browser.define_singleton_method(:default_context) { @default_context ||= Struct.new(:id).new("ctx_default") }
+    fake_browser.define_singleton_method(:command) do |_cmd, **_params|
+      in_flight_during_leitura = Fetcher::PageFetcher.instance_variable_get(:@in_flight)
+      { "cookies" => [{ "name" => "auth", "value" => "tok123", "domain" => "youtube.com", "path" => "/" }] }
+    end
 
     Fetcher::PageFetcher.stubs(:browser).returns(fake_browser)
     Fetcher::PageFetcher.instance_variable_set(:@in_flight, 0)
@@ -943,12 +977,12 @@ assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
 
     assert_equal 1, cookies.size
     assert_equal "auth", cookies.first["name"]
-    assert_operator in_flight_during_all, :>, 0,
-                    "cookies.all deve rodar dentro de track_in_flight (in_flight > 0)"
+    assert_operator in_flight_during_leitura, :>, 0,
+                    "a leitura (Storage.getCookies) deve rodar dentro de track_in_flight (in_flight > 0)"
     assert_equal 0, Fetcher::PageFetcher.instance_variable_get(:@in_flight),
                  "in_flight deve retornar a 0 após BrowserCookies.for"
 
-    in_flight_during_all = nil
+    in_flight_during_leitura = nil
     resultado = Fetcher::BrowserCookies.load!([{ "name" => "auth", "value" => "tok123",
                                                  "domain" => "youtube.com", "path" => "/" }])
 

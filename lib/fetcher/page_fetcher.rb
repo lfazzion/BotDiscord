@@ -9,6 +9,16 @@ require_relative "ttl_policy"
 require_relative "bot_detection"
 require_relative "readability_injector"
 require_relative "host_rate_limiter"
+# `alive?` delega a sonda para `BrowserCookies.probe` (laudo r3 B5 / v2 B3):
+# a sonda usa a MESMA via da leitura de cookies (comando CDP no raiz, com
+# browserContextId do default_context). Sem este require, o caminho da sonda
+# dava NameError em qualquer contexto que carregasse PageFetcher sem antes
+# carregar BrowserCookies. O ciclo de carga browser_cookies -> page_fetcher
+# EXISTE de fato (este require e o `require_relative "page_fetcher"` de
+# browser_cookies.rb, ambos em código de carga); ele é TOLERADO porque as
+# referências cruzadas só aparecem em corpo de método — o segundo `require`
+# do ciclo vira no-op em vez de reentrar.
+require_relative "browser_cookies"
 
 module Fetcher
   class PageFetcher
@@ -192,12 +202,28 @@ module Fetcher
       # só por idade. O timeout próprio é obrigatório: o client do ferrum está
       # configurado com `timeout: 30` (config/initializers/ferrum.rb), então uma
       # sessão pendurada bloquearia 30s aqui.
+      #
+      # A sonda NÃO passa pela página default (a origem do -32001 de produção):
+      # `browser.version` + a MESMA chamada raiz da leitura de cookies
+      # (laudo r3 B5 / v2 B3, item 1: se a leitura mudou, o probe também muda —
+      # senão o probe ficaria apontando para o caminho instável e reconstruindo à
+      # toa). O comando CDP da sonda é o `Storage.getCookies` com o
+      # browserContextId do default_context, sem página nem sessionId.
       def alive?(browser)
-        Timeout.timeout(BROWSER_PROBE_TIMEOUT) { browser.version }
-        true
-      rescue Timeout::Error, StandardError => e
-        Rails.logger.warn "[Fetcher::PageFetcher] browser em cache não respondeu (#{e.class}) — descartando"
-        false
+        # Sonda delega para o MESMO comando da leitura (laudo r3 B5 / v2 B3):
+        # `version` + `Storage.getCookies` com browserContextId, cliente raiz,
+        # SEM a página default (a origem do -32001). O timeout é de
+        # `BrowserCookies.probe` (BROWSER_PROBE_TIMEOUT = 2s).
+        Fetcher::BrowserCookies.probe(browser)
+      end
+
+      # Sinal de que a instância em cache está CONDENADA (Sol r2, @pending_discard):
+      # quem pediu reset (timeout/sessão morta) marcou-a para morrer —
+      # `BrowserCookies.for` usa para NÃO fazer a 2ª leitura sobre a condenada
+      # (ossatura T3 do patch parcial; quem descarta na saída do último holder é o
+      # `@browser`/`track_in_flight`). Estado existente — não é estado novo.
+      def browser_condemned?
+        BROWSER_MUTEX.synchronize { @pending_discard == true }
       end
 
       # Sinal ESTREITO de sessão morta, usado em `fetch_via_ferrum` e em

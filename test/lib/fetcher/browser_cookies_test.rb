@@ -13,10 +13,25 @@ class Fetcher::BrowserCookiesTest < ActiveSupport::TestCase
     def all = @lista.to_h { |c| [c.name, c] }
   end
 
+  # A leitura de cookies migrou para o cliente raiz (`Storage.getCookies` com
+  # `browserContextId` do `default_context`), SEM a página default (laudo r3 B5 /
+  # v2 B3). O dublê modela a API NOVA: `command` devolve os cookies em formato
+  # CDP (hash) e `default_context.id` é o `browserContextId`. O caminho antigo
+  # (`cookies.all`) foi mantido no dublê só para o fallback -32601.
   class FakeBrowser
     attr_reader :cookies
 
     def initialize(lista) = @cookies = FakeCookies.new(lista)
+
+    def command(_cmd, **_params)
+      { "cookies" => @cookies.all.values.map do |c|
+          { "name" => c.name, "value" => c.value, "domain" => c.domain, "path" => c.path }
+        end }
+    end
+
+    def default_context
+      @default_context ||= Struct.new(:id).new("ctx_default")
+    end
   end
 
   def com_browser(lista)
@@ -74,6 +89,19 @@ class Fetcher::BrowserCookiesTest < ActiveSupport::TestCase
     attr_reader :cookies
 
     def initialize = @cookies = Espiao.new
+
+    # `load!` grava via `cookies.set` e confirma lendo de volta — o caminho de
+    # leitura é o cliente raiz (`command` com `browserContextId`). Devolve os
+    # cookies postados no formato CDP (hash), como o `Storage.getCookies` faria.
+    def command(_cmd, **_params)
+      { "cookies" => @cookies.postos.map do |c|
+          { "name" => c[:name], "value" => c[:value].to_s, "domain" => c[:domain], "path" => c[:path] }
+        end }
+    end
+
+    def default_context
+      @default_context ||= Struct.new(:id).new("ctx_default")
+    end
   end
 
   def com_espiao
@@ -120,12 +148,19 @@ class Fetcher::BrowserCookiesTest < ActiveSupport::TestCase
   # Ferrum::BrowserError no construtor HASH real (errors.rb:88-94).
   class ZumbiBrowser
     ZUMBI_ERROR = Ferrum::BrowserError.new("message" => "Session with given id not found.")
-    def cookies
-      self
-    end
+
+    def cookies = self
 
     def all
       raise ZUMBI_ERROR
+    end
+
+    def command(_cmd, **_params)
+      raise ZUMBI_ERROR
+    end
+
+    def default_context
+      @default_context ||= Struct.new(:id).new("ctx_default")
     end
   end
 

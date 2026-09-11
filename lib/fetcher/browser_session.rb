@@ -22,6 +22,15 @@ module Fetcher
   # Chrome já tiver login no domínio, é ELE a fonte, e o jar fica de reserva. Sem
   # isso, logar no perfil da VM não teria efeito nenhum aqui — o contexto isolado
   # nasce limpo e não herda os cookies do contexto padrão.
+  #
+  # A leitura de cookies (`SessionCookies.for` → `BrowserCookies.for`) roda ANTES
+  # de criar o contexto isolado do fetch: o contexto do fetch nasce com
+  # `disposeOnDetach: true`, ou seja, morre com a sessão de debug deste request
+  # (`dispose_quietly` no ensure). Reaproveitá-lo para ler depois seria ler de um
+  # jar que já foi despejado — o laudo r3 B3/Item 4: `disposeOnDetach` é do
+  # REQUEST, não do default_context. O default_context do Ferrum é a fonte que
+  # pereniza os cookies; o contexto do fetch é só a arena de render, descartada
+  # no ensure e nunca reutilizada para leitura.
   module BrowserSession
     # Fica DENTRO de `ExtractService::CHANNEL_TIMEOUT` (40s), que por sua vez fica
     # abaixo dos 90s do plugin do reader. Mexer num exige manter a ordem.
@@ -53,7 +62,10 @@ module Fetcher
         # conectou em IP bloqueado (rebinding).
         SsrfGuard.resolve!(url.to_s)
         # Levanta `CookieJar::Expired` nomeando o domínio quando não há sessão em
-        # fonte nenhuma — antes de gastar browser.
+        # fonte nenhuma — antes de gastar browser. ROLANDO ANTES do contexto do
+        # fetch (laudo r3 Item 4): a leitura usa o default_context do Ferrum, que
+        # é o que pereniza os cookies; o contexto do fetch (disposeOnDetach) só
+        # nasce depois, e é descartado no ensure sem ser reutilizado para leitura.
         cookies, origem = SessionCookies.for(host)
 
         PageFetcher.track_in_flight(timeout: OVERALL_TIMEOUT) do
@@ -234,4 +246,3 @@ module Fetcher
     end
   end
 end
-
