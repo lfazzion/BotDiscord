@@ -110,10 +110,10 @@ module Fetcher
                 original_timeout = (page.timeout rescue nil)
                 begin
                   # Timeout de navegação reduzido para Reddit (vs geral 20s):
-                  # a página de bloqueio HTTP 403 volta em < 1s, e com UA real
-                  # a página de busca carrega em ~6s. O timeout é restaurado
-                  # ANTES do `yield`, então a extração JS da thread (mais
-                  # pesada) não fica limitada a 15s.
+                  # a página de bloqueio volta rápido (< 1s) mesmo se o status
+                  # real não foi medido, e com UA real a busca carrega em ~6s.
+                  # O timeout é restaurado ANTES do `yield`, então a extração JS
+                  # da thread (mais pesada) não fica limitada a 15s.
                   goto_limit = host.match?(REDDIT_HOSTS) ? 15 : PageFetcher::GOTO_TIMEOUT
                   page.timeout = goto_limit if page.respond_to?(:timeout=)
                   # Assinante ANTES do go_to: é o que captura o remoteIPAddress do
@@ -283,6 +283,10 @@ module Fetcher
       #
       # `platform:` é "Win32" (coerente com o REDDIT_USER_AGENT Windows).
       # `acceptLanguage:` pt-BR para não enviar o en-US padrão do headless-shell.
+      # Se a sessão CDP morrer exatamente no setUserAgentOverride (caso raro mas
+      # observado: a sonda de `alive?` não garante a vida até o próximo comando),
+      # o rescue evita que a exceção crua suba — o canal cai no erro nomeado normal
+      # (`RenderTimeout` ou `SsrfGuard::Blocked`) na navegação seguinte.
       def apply_reddit_user_agent!(page, host)
         return unless host.match?(REDDIT_HOSTS)
 
@@ -290,6 +294,10 @@ module Fetcher
           userAgent:      REDDIT_USER_AGENT,
           acceptLanguage: "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
           platform:       REDDIT_PLATFORM)
+      rescue *PageFetcher::DEAD_SESSION_ERRORS, Ferrum::Error => e
+        Rails.logger.warn "[Fetcher::BrowserSession] UA override falhou " \
+                          "(#{e.class}: #{e.message}) — sessão CDP morreu, " \
+                          "a navegação deve falhar em seguida"
       end
 
       def persist_rotation(page, host)

@@ -485,8 +485,32 @@ class Fetcher::BrowserSessionTest < ActiveSupport::TestCase
   # Achado 2 (perito r2): o UA override em outros hosts NÃO deve tocar o Reddit
   # — e hosts não-Reddit nem devem emitir setUserAgentOverride (comportamento de
   # YouTube/X preservado).
+  # I2 do laudo r6: o goto_limit especial do Reddit (15s) vs geral (20s) deve
+  # estar coberto por teste. O duble FakePage capta timeout_during_goto na
+  # chamada a go_to.
+  test "goto_limit do Reddit e 15s e o de hosts comuns e PageFetcher::GOTO_TIMEOUT" do
+    Fetcher::SessionCookies.stubs(:for).with("old.reddit.com").returns([[], :jar])
+
+    Fetcher::BrowserSession.with_page("https://old.reddit.com/r/x") { |_p| :ok }
+
+    assert_equal 15, @page.timeout_during_goto,
+                 "Reddit deve usar goto_limit de 15s"
+
+    @page2 = FakePage.new
+    @context2 = FakeContext.new(@page2)
+    Fetcher::PageFetcher.stubs(:browser).returns(FakeBrowser.new(@context2))
+    Fetcher::SessionCookies.stubs(:for).with("x.com").returns([[], :jar])
+
+    Fetcher::BrowserSession.with_page("https://x.com/someuser") { |_p| :ok }
+
+    assert_equal Fetcher::PageFetcher::GOTO_TIMEOUT, @page2.timeout_during_goto,
+                 "host comum deve usar goto_limit de #{Fetcher::PageFetcher::GOTO_TIMEOUT}s"
+  end
+
   test "with_page nao emite setUserAgentOverride para host nao-reddit" do
-    Fetcher::BrowserSession.with_page("https://www.youtube.com/watch?v=x") { |_p| :ok }
+    Fetcher::SessionCookies.stubs(:for).with("x.com").returns([[], :jar])
+
+    Fetcher::BrowserSession.with_page("https://x.com/someuser") { |_p| :ok }
 
     refute @page.commands.any? { |name, _| name == "Network.setUserAgentOverride" },
            "UA override é SÓ do Reddit — não pode vazar para YouTube/X"

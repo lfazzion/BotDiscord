@@ -3,31 +3,23 @@
 require "test_helper"
 
 class RedditBlockedPageTest < ActiveSupport::TestCase
-  test "Fetcher::Channels::Reddit.blocked_reddit_page? returns true for blocked text and false for normal text" do
-    blocked_text ="whoa there, pardner! Your request has been blocked due to a network policy"
+  test "Fetcher::Channels::Reddit.blocked_reddit_page? retorna true para texto bloqueado e false para texto normal" do
+    blocked_text = "whoa there, pardner! Your request has been blocked due to a network policy"
     normal_text = "Here are the search results for something interesting"
 
     assert_equal true, Fetcher::Channels::Reddit.blocked_reddit_page?(blocked_text)
     assert_equal false, Fetcher::Channels::Reddit.blocked_reddit_page?(normal_text)
   end
 
-  test "REDDIT_USER_AGENT é determinístico de Chrome/Windows sem HeadlessChrome" do
+  test "REDDIT_USER_AGENT e determinístico de Chrome/Windows sem HeadlessChrome" do
     ua = Fetcher::BrowserSession::REDDIT_USER_AGENT
     esperado = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "\
                "AppleWebKit/537.36 (KHTML, like Gecko) "\
                "Chrome/131.0.0.0 Safari/537.36"
 
-    assert ua.is_a?(String)
-    refute ua.strip.empty?
-    refute_includes ua, "HeadlessChrome"
-    assert_match(/Windows/i, ua)
     assert_match(/Chrome\/131/, ua)
     assert_equal esperado, ua,
                  "UA do Reddit deve ser o Chrome 131 Windows determinístico"
-    # NÃO usa assert_same: ua já é a constante (atribuição literal), e
-    # assert_same entre a constante e ela mesma não prova nada (sempre
-    # passa pelo singleton). O que importa é o EQUAL dos valores,
-    # já coberto por assert_equal acima.
   end
 
   test "REDDIT_PLATFORM é Win32 coerente com o UA" do

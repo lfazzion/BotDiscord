@@ -57,9 +57,10 @@ module Fetcher
       end
 
       # Página de bloqueio do Reddit ("whoa there, pardner! ... blocked due to a
-      # network policy"): carrega com HTTP 200 e o SEARCH_JS devolve "[]" —
-      # indistinguível de busca sem resultado sem este cheque. Marcadores da
-      # própria página de erro, medidos ao vivo (ver MISSAO r3).
+      # network policy"): o status real da página de bloqueio não foi medido
+      # (o CDP pode reportar 200 com payload de erro ou 403 com corpo de HTML;
+      # o teste ao vivo em MISSAO r3 não registrou o código HTTP). O marcador
+      # textual é o que importa.
       BLOCKED_PAGE_MARKERS = [
         /whoa there,\s*pardner/i,
         /blocked due to a network policy/i
@@ -204,11 +205,7 @@ module Fetcher
           # hash estiver vazio; a sonda de innerText só enriquece a mensagem
           # (se falhar, levanta com a mensagem padrão, nunca cai em build).
           if blocked_hash?(payload)
-            texto = begin
-              page.evaluate("document.body ? document.body.innerText : ''").to_s
-            rescue StandardError
-              ""
-            end
+            texto = detect_blocked_page_text(page)
             razao = blocked_page_reason(texto)
             raise PageFailed, razao if razao
 
@@ -233,11 +230,7 @@ module Fetcher
           # Mesmo cheque de from_page: página de bloqueio devolve hash vazio
           # que build_thread_comments trataria como thread real sem conteúdo.
           if blocked_hash?(payload)
-            texto = begin
-              page.evaluate("document.body ? document.body.innerText : ''").to_s
-            rescue StandardError
-              ""
-            end
+            texto = detect_blocked_page_text(page)
             razao = blocked_page_reason(texto)
             raise PageFailed, razao if razao
 
@@ -280,11 +273,7 @@ module Fetcher
           # vazio como resposta legítima. A sonda de innerText só enriquece a
           # mensagem; sem marcador, levanta SearchFailed com mensagem padrão.
           if !itens.is_a?(Array) || itens.empty?
-            texto = begin
-              page.evaluate("document.body ? document.body.innerText : ''").to_s
-            rescue StandardError
-              ""
-            end
+            texto = detect_blocked_page_text(page)
             razao = blocked_page_reason(texto)
             raise SearchFailed, razao if razao
           end
@@ -318,22 +307,30 @@ module Fetcher
             Array(payload["comments"]).empty?
         end
 
-        # Devolve a razão de bloqueio se o texto da página contiver
-        # marcadores, ou nil se a página parece legítima.
+        # Devolve a razao de bloqueio se o texto da pagina contiver
+        # marcadores, ou nil se a pagina parece legitima.
         def blocked_page_reason(text)
           texto = text.to_s
           return nil unless blocked_reddit_page?(texto)
 
           if texto.match?(/network policy/i)
-            "blocked by network policy"
-          elsif texto.match?(/whoa there/i)
-            "blocked by reddit"
+            "Reddit bloqueou a leitura (politica de rede)"
           else
-            "blocked"
+            "Reddit bloqueou a leitura (whoa there)"
           end
         end
 
         private
+
+        # Sonda o texto da pagina para detectar bloqueio. O rescue garante que
+        # a sonda nunca levanta excecao propria — se o evaluate falhar (pagina
+        # intermediaria, rede), devolve string vazia e o chamador usa a mensagem
+        # padrao da excecao nomeada.
+        def detect_blocked_page_text(page)
+          page.evaluate("document.body ? document.body.innerText : ''").to_s
+        rescue StandardError
+          ""
+        end
 
         def clamp_limit(limit)
           [[limit.to_i, 1].max, MAX_RESULTADOS].min
