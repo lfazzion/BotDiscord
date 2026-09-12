@@ -4,8 +4,40 @@ require "test_helper"
 
 class SentimentAnalysisJobTest < ActiveJob::TestCase
   setup do
+    # Isola ENV e cache de canais Discord/X: vazamento de ordem de seed pode
+    # fazer ensure_digest_channel (ou ensure_admin_channel transitivo) retornar um
+    # canal pré-cacheado e pular os stubs, e o teste quebra com
+    # WebMock::NetConnectNotAllowedError (CI flake #171).
+    @original_discord_digest_channel_id = ENV.delete("DISCORD_DIGEST_CHANNEL_ID")
+    @original_discord_admin_channel_id = ENV.delete("DISCORD_ADMIN_CHANNEL_ID")
     Rails.cache.clear rescue nil
+    Rails.cache.delete("discord:digest_channel_id")
+    Rails.cache.delete("discord:admin_channel_id")
+    Rails.cache.delete("discord:digest_channel_lock")
+    Rails.cache.delete("discord:admin_channel_lock")
+
+    # Dublê do cliente: NENHUM método HTTP de DiscordApiClient toca a rede.
+    # Os testes continuam usando `expects` para asserir o envio real ao dublê.
+    DiscordApiClient.stubs(:get_bot_guilds).returns([{ "id" => "guild_test" }])
+    DiscordApiClient.stubs(:get_guild_channels).returns([{ "id" => "channel_123", "name" => "digest-updates" }])
+    DiscordApiClient.stubs(:get_channel).returns({ "id" => "channel_123" })
+    DiscordApiClient.stubs(:create_text_channel).returns({ "id" => "channel_123" })
+
     @target = SentimentTarget.create!(name: "Cleitin Job Test", query: "cleitin")
+  end
+
+  teardown do
+    if @original_discord_digest_channel_id
+      ENV["DISCORD_DIGEST_CHANNEL_ID"] = @original_discord_digest_channel_id
+    else
+      ENV.delete("DISCORD_DIGEST_CHANNEL_ID")
+    end
+    if @original_discord_admin_channel_id
+      ENV["DISCORD_ADMIN_CHANNEL_ID"] = @original_discord_admin_channel_id
+    else
+      ENV.delete("DISCORD_ADMIN_CHANNEL_ID")
+    end
+    Rails.cache.clear rescue nil
   end
 
   test "perform executa o pipeline completo de análise de sentimento e monta frozen_spec com janelas" do

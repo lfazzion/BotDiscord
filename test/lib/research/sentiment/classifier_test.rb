@@ -45,8 +45,29 @@ end
 
 class SentimentClassifierTest < ActiveSupport::TestCase
   setup do
+    # Isola ENV de Discord: testes anteriores ou externos podem ter setado
+    # DISCORD_ADMIN_CHANNEL_ID, o que faz ensure_admin_channel retornar
+    # diretamente SEM passar pelos stubs de DiscordApiClient, e o teste
+    # quebra com WebMock::NetConnectNotAllowedError (CI flake #171).
+    @original_discord_admin_channel_id = ENV.delete("DISCORD_ADMIN_CHANNEL_ID")
+
+    # Limpa cache do canal admin: se um teste anterior cacheou um canal real
+    # no Rails.cache, ensure_admin_channel pula os stubs de DiscordApiClient
+    # e envia para um canal real = WebMock bloqueia.
     Rails.cache.clear
+    Rails.cache.delete("discord:admin_channel_id")
+    Rails.cache.delete("discord:admin_channel_lock")
+
     SentimentDailyQuota.delete_all
+
+    # Segurança extra (dublê do cliente): garante que NENHUM método HTTP de
+    # DiscordApiClient toque a rede neste arquivo, mesmo se um caminho não previsto
+    # (ex.: get_channel/get_guild_channels em recuperação) for exercitado por ordem
+    # de seed. O `expects(:send_message)` por teste continua fazendo a asserção
+    # real do comportamento.
+    DiscordApiClient.stubs(:get_channel).returns({ "id" => "admin_channel_test" })
+    DiscordApiClient.stubs(:get_guild_channels).returns([{ "id" => "admin_channel_test", "name" => "digest-updates" }])
+
     @target = SentimentTarget.create!(name: "Cleitin Classifier", query: "cleitin")
     @run = @target.sentiment_runs.create!(
       status: "collected",
@@ -60,6 +81,14 @@ class SentimentClassifierTest < ActiveSupport::TestCase
         text: "Frase de teste #{i} com palavras suficientes para o classificador",
         collected_at: Time.current
       )
+    end
+  end
+
+  teardown do
+    if @original_discord_admin_channel_id
+      ENV["DISCORD_ADMIN_CHANNEL_ID"] = @original_discord_admin_channel_id
+    else
+      ENV.delete("DISCORD_ADMIN_CHANNEL_ID")
     end
   end
 
