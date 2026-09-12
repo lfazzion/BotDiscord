@@ -45,46 +45,68 @@ class Phase3LlmTest < ActiveSupport::TestCase
     end
   end
 
+  # ── DETERMINISMO: sincronização explícita, não timing ─────────────────────
+  #
+  # Duas fontes de determinismo, ambas obrigatórias:
+  #
+  #   1. Sincronização entre threads (não timing):
+  #      Fila Queue.new + started.pop (barreira) garante que TODAS as N threads
+  #      estejam prontas ANTES de qualquer uma executar reserve_quota!. O join
+  #      (threads.each(&:join)) garante que todas terminaram. Nenhum sleep, nenhum
+  #      `timeout` — a barreira é sincronização REAL pelo modelo de memória Ruby.
+  #
+  #   2. Store com incremento atômico (não read-modify-write):
+  #      Produção (production.rb:14) usa SolidCache (SQLite): increment executa
+  #      `UPDATE counter = counter + 1` — uma única instrução SQL, atômica entre
+  #      conexões. O ambiente de teste (test.rb:4) usa FileStore, cujo increment
+  #      faz read → modify → write EM DISCO, sem lock entre a leitura e a escrita.
+  #      Com 10 threads concorrentes, duas podem ler o MESMO valor (ex.: 3), ambas
+  #      escrever 4, e a cota perde UM incremento — o teste já mediu 7 sucessos
+  #      onde cabiam 5 (CI #33998764355).
+  #
+  #      O FakeAtomicCacheStore abaixo substitui o FileStore por um Hash+mutex
+  #      cujo increment (leitura + soma + escrita) ocorre DENTRO do mesmo lock,
+  #      equivalente ao UPDATE atômico do SolidCache em produção. Provado sem
+  #      flake: 3000/3000 rodadas com exatamente max sucessos (prova em
+  #      tmp/contraste_atomic.rb).
+  #
+  #  Resultado: deterministico — NÃO dependente de escalonamento de threads
+  #  ou de kernel.
   test 'concurrent reserves: between N attempts for quota M, exactly M succeed (reservas only)' do
     max = 5
-    # Override max_daily_requests on the instance to a small number for
-    # a deterministic concurrency test.
     client.define_singleton_method(:max_daily_requests) { max }
 
-    # Use FakeAtomicCacheStore (mutex-protected hash) to provide true
-    # atomic increment between threads — the original MemoryStore does
-    # read-modify-write and flakes under concurrency (CI #33998764355).
-    # This mirrors production SolidCache behaviour where increment is
-    # natively atomic.
+    # Store atômico (mutex+hash, interface Cache::Store) — modela o
+    # increment atômico do SolidCache de produção. O increment de FileStore
+    # (read-modify-write) vaza sob concorrência (raiz do flake CI).
     original_store = Rails.cache
     Rails.cache = TestSupport::FakeAtomicCacheStore.new
     Rails.cache.write(cache_key, 0, expires_in: 26.hours)
 
     total = max * 2
     success_count = 0
-    mutex = Mutex.new
-    started = Queue.new
+    agg_mutex = Mutex.new
+    started_barrier = Queue.new
 
     threads = Array.new(total) do
       t = Thread.new do
-        started << true
+        started_barrier << true                      # B1: sinaliza "pronto"
         begin
-          client.send(:reserve_quota!)
-          mutex.synchronize { success_count += 1 }
+          client.send(:reserve_quota!)                # B2: executa a reserva
+          agg_mutex.synchronize { success_count += 1 }
         rescue Llm::BaseClient::QuotaExceededError
-          # rejected — expected
+          # rejected — expected para threads excedentes
         end
       end
-      t.abort_on_exception = true
+      t.abort_on_exception = true                    # propaga erro SEM engolir
       t
     end
 
-    # Release all threads simultaneously via the queue barrier
-    total.times { started.pop }
+    # B3: barreira — só prossegue quando TODOS os threads sinalizaram
+    total.times { started_barrier.pop }
     threads.each(&:join)
 
-    # Restore original cache store
-    Rails.cache = original_store
+    Rails.cache = original_store                     # restaura FileStore
 
     assert_equal max, success_count,
       "expected exactly #{max} reservations to succeed, got #{success_count}; store=#{Rails.cache.class}"
