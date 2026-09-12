@@ -51,18 +51,29 @@ module Fetcher
       # caía no `||` do caminho comum e o serviço devolvia a casca da página
       # como se fosse a thread, com `engine: "static"`.
       class SearchFailed < Error
-        def initialize
-          super("página de busca do Reddit veio ilegível — o seletor mudou ou a página não é a da busca")
+        def initialize(msg = nil)
+          super(msg || "página de busca do Reddit veio ilegível — o seletor mudou ou a página não é a da busca")
         end
       end
+
+      # Página de bloqueio do Reddit ("whoa there, pardner! ... blocked due to a
+      # network policy"): o status real da página de bloqueio não foi medido
+      # (o CDP pode reportar 200 com payload de erro ou 403 com corpo de HTML;
+      # o teste ao vivo em MISSAO r3 não registrou o código HTTP). O marcador
+      # textual é o que importa.
+      BLOCKED_PAGE_MARKERS = [
+        /whoa there,\s*pardner/i,
+        /blocked due to a network policy/i
+      ].freeze
 
       # O par de `SearchFailed`, para o caminho de LEITURA: `from_page` devolvia
       # nil quando o `EXTRACT_JS` devolvia null (seletor mudou, JSON inválido) e
       # o `ExtractService` caía no caminho comum SEM erro — a mesma falha
       # silenciosa que a busca foi construída para evitar.
       class PageFailed < Error
-        def initialize
-          super("página de thread do Reddit veio ilegível — o seletor mudou ou a página não é a da thread")
+        def initialize(msg = nil)
+          super(msg || "página de thread do Reddit veio ilegível — o seletor mudou " \
+                     "ou a página não é a da thread")
         end
       end
 
@@ -182,9 +193,24 @@ module Fetcher
         # aqui, e é por aqui que o teste entra sem precisar de um Chrome.
         # `nil` do JS (seletor que mudou, JSON inválido) vira `PageFailed` —
         # erro nomeado, nunca degradação silenciosa para o caminho estático.
+        # Página de bloqueio (whoa there, pardner...) devolve hash com title=""
+        # e comments=[] — hash válido que build() trataria como thread vazia.
         def from_page(page:, url:)
           payload = parse(page.evaluate(EXTRACT_JS))
           raise PageFailed if payload.nil?
+
+          # Mesmo cheque da busca: hash vazio de página de bloqueio precisa ser
+          # detectado ANTES de build() — title="" + comments=[] vira thread sem
+          # conteúdo em vez de erro nomeado. Levanta PageFailed SEMPRE que o
+          # hash estiver vazio; a sonda de innerText só enriquece a mensagem
+          # (se falhar, levanta com a mensagem padrão, nunca cai em build).
+          if blocked_hash?(payload)
+            texto = detect_blocked_page_text(page)
+            razao = blocked_page_reason(texto)
+            raise PageFailed, razao if razao
+
+            raise PageFailed
+          end
 
           build(url, payload)
         end
@@ -200,6 +226,16 @@ module Fetcher
         def from_thread_comments_page(page:, url:)
           payload = parse(page.evaluate(EXTRACT_JS))
           raise PageFailed if payload.nil?
+
+          # Mesmo cheque de from_page: página de bloqueio devolve hash vazio
+          # que build_thread_comments trataria como thread real sem conteúdo.
+          if blocked_hash?(payload)
+            texto = detect_blocked_page_text(page)
+            razao = blocked_page_reason(texto)
+            raise PageFailed, razao if razao
+
+            raise PageFailed
+          end
 
           build_thread_comments(url, payload)
         end
@@ -230,6 +266,18 @@ module Fetcher
         # sem precisar de um Chrome.
         def from_search_page(page:, limit: MAX_RESULTADOS)
           itens = parse(page.evaluate(SEARCH_JS))
+
+          # Vazio ou não-array não é, sem mais, "busca sem resultado" — a
+          # página de bloqueio devolve exatamente essa forma. Só aqui (custo
+          # de 1 evaluate extra) confirmamos se é bloqueio antes de aceitar o
+          # vazio como resposta legítima. A sonda de innerText só enriquece a
+          # mensagem; sem marcador, levanta SearchFailed com mensagem padrão.
+          if !itens.is_a?(Array) || itens.empty?
+            texto = detect_blocked_page_text(page)
+            razao = blocked_page_reason(texto)
+            raise SearchFailed, razao if razao
+          end
+
           # Erro nomeado, nunca lista vazia — ver `SearchFailed`. Array vazio de
           # verdade continua passando: busca que rodou e não achou nada é
           # resposta, não falha.
@@ -238,7 +286,51 @@ module Fetcher
           itens.filter_map { |raw| item_de_busca(raw) }.first(clamp_limit(limit))
         end
 
+        # Público pelo mesmo motivo de `from_page`/`from_search_page`: é por
+        # aqui que o teste entra sem precisar de um Chrome nem de uma página
+        # de bloqueio ao vivo.
+        def blocked_reddit_page?(text)
+          texto = text.to_s
+          BLOCKED_PAGE_MARKERS.any? { |marcador| texto.match?(marcador) }
+        end
+
+        # Hash com title vazio E comments vazio é assinatura de página de
+        # bloqueio no caminho de THREAD (o EXTRACT_JS devolve estrutura
+        # válida porém vazia em vez de null). Não usa o String de title
+        # porque o modelo usaria to_s: "" seria aceito como thread sem
+        # título. Exigir BAIXO título vazio E lista de comentários vazia
+        # para não derrubar thread cujo título seja realmente só whitespace.
+        def blocked_hash?(payload)
+          return false unless payload.is_a?(Hash)
+
+          payload["title"].to_s.strip.empty? &&
+            Array(payload["comments"]).empty?
+        end
+
+        # Devolve a razao de bloqueio se o texto da pagina contiver
+        # marcadores, ou nil se a pagina parece legitima.
+        def blocked_page_reason(text)
+          texto = text.to_s
+          return nil unless blocked_reddit_page?(texto)
+
+          if texto.match?(/network policy/i)
+            "Reddit bloqueou a leitura (politica de rede)"
+          else
+            "Reddit bloqueou a leitura (whoa there)"
+          end
+        end
+
         private
+
+        # Sonda o texto da pagina para detectar bloqueio. O rescue garante que
+        # a sonda nunca levanta excecao propria — se o evaluate falhar (pagina
+        # intermediaria, rede), devolve string vazia e o chamador usa a mensagem
+        # padrao da excecao nomeada.
+        def detect_blocked_page_text(page)
+          page.evaluate("document.body ? document.body.innerText : ''").to_s
+        rescue StandardError
+          ""
+        end
 
         def clamp_limit(limit)
           [[limit.to_i, 1].max, MAX_RESULTADOS].min

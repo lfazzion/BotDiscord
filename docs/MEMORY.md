@@ -10,6 +10,8 @@
 
 > O que estamos construindo / investigando nas últimas 48h.
 
+- **Override de fingerprint condicionado por host no fetcher**: o `Fetcher::BrowserSession#apply_reddit_user_agent!` (lib/fetcher/browser_session.rb) injeta `Network.setUserAgentOverride` com UA determinístico de Chrome/Windows SÓ para hosts que casam `REDDIT_HOSTS` (reddit.com e subdomínios) — nunca no UA global, para não mudar o comportamento medido do YouTube/X. Garante o timeout de navegação reduzido (15s) só no Reddit via `goto_limit`.
+
 - **[2026-08-29]** Frente C — Deduplicação de alertas de scraping por transição de incidente (`AlertThrottler`, `ScrapingFailureAlertJob`, `ScrapeYoutubeJob`).
   - Alerta por TRANSIÇÃO: notifica no 1º incidente, em alteração de causa (`error_type` ou `normalize_fingerprint(error_message)`), ou após recuperação com nova falha. Repetições diárias da mesma falha no mesmo perfil são descartadas.
   - Estado persistido em Solid Cache (`scraping_incident:#{scraper_name}:#{profile_id}`, TTL 30d) sem migrations no banco. Lock atômico com TTL 5min e double-checked locking para concorrência.

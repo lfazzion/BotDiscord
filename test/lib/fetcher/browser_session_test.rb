@@ -433,4 +433,86 @@ class Fetcher::BrowserSessionTest < ActiveSupport::TestCase
 
     Fetcher::BrowserSession.with_page("https://www.youtube.com/watch?v=x") { |_p| :ok }
   end
+
+  # Causa raiz do bloqueio do Reddit: o Chrome do app é chromedp/headless-shell e
+  # anuncia o UA `HeadlessChrome/1xx`, que o Reddit bloqueia ("whoa there,
+  # pardner ... blocked due to a network policy"). A correção é injetar um UA de
+  # navegador real via `Network.setUserAgentOverride` por-página, ANTES do
+  # `go_to` — o override por-página não toca o perfil persistente do Chrome e
+  # precisa valer já na primeira requisição.
+  #
+  # Achado 2 (perito r2): `Network.enable` é emitido PELO FERRUM em
+  # `prepare_page` sem argumentos ANTES do go_to — re-emitir com
+  # maxTotalBufferSize:0 desligaria o buffer de corpo (quem chama page.body
+  # recebe nil). Por isso NÃO emitimos Network.enable aqui; só o
+  # setUserAgentOverride, via chamada CRUA ao CDP.
+  #
+  # Achado 3 (perito r2): `platform: "Win32"` fixo contra o UA sorteado
+  # (3 de 4 UAs não-Windows) dava fingerprint incoerente e prova
+  # não-determinística. Agora o Reddit usa UM UA determinístico de Chrome/Windows
+  # com platform coerente — ver REDDIT_USER_AGENT/REDDIT_PLATFORM.
+  test "with_page injeta user-agent determinístico de Chrome/Windows antes do go_to" do
+    Fetcher::SessionCookies.stubs(:for).with("old.reddit.com").returns([[], :jar])
+
+    ja_tinha_override_no_go_to = nil
+    @page.stubs(:go_to).with do |_url|
+      ja_tinha_override_no_go_to = @page.commands.any? { |name, _| name == "Network.setUserAgentOverride" }
+      true
+    end
+
+    Fetcher::BrowserSession.with_page("https://old.reddit.com/r/x") { |_p| :ok }
+
+    assert ja_tinha_override_no_go_to,
+           "override do UA deve estar emitido ANTES do go_to (valer já na 1a requisição)"
+    cmd_ovr = @page.commands.find { |name, _| name == "Network.setUserAgentOverride" }
+    refute_nil cmd_ovr, "deve chamar Network.setUserAgentOverride"
+    _name, params_ovr = cmd_ovr
+    assert_equal Fetcher::BrowserSession::REDDIT_USER_AGENT, params_ovr[:userAgent],
+                 "deve usar o UA determinístico de Chrome/Windows (não sorteio)"
+    refute_match(/Headless/i, params_ovr[:userAgent])
+    assert_match(/Windows/i, params_ovr[:userAgent], "UA deve ser de Windows")
+    assert_equal Fetcher::BrowserSession::REDDIT_PLATFORM, params_ovr[:platform],
+                 "platform deve ser coerente com o UA (Win32)"
+    assert_includes params_ovr[:acceptLanguage].to_s, "pt-BR",
+                    "deve incluir acceptLanguage pt-BR no override"
+
+    # Achado 2: NÃO deve re-emitir Network.enable (o Ferrum já o faz em
+    # prepare_page com buffers de corpo intactos).
+    refute @page.commands.any? { |name, _| name == "Network.enable" },
+           "NÃO deve emitir Network.enable (Ferrum já emite; re-emitir com buffers zerados quebraria page.body)"
+  end
+
+  # Achado 2 (perito r2): o UA override em outros hosts NÃO deve tocar o Reddit
+  # — e hosts não-Reddit nem devem emitir setUserAgentOverride (comportamento de
+  # YouTube/X preservado).
+  # I2 do laudo r6: o goto_limit especial do Reddit (15s) vs geral (20s) deve
+  # estar coberto por teste. O duble FakePage capta timeout_during_goto na
+  # chamada a go_to.
+  test "goto_limit do Reddit e 15s e o de hosts comuns e PageFetcher::GOTO_TIMEOUT" do
+    Fetcher::SessionCookies.stubs(:for).with("old.reddit.com").returns([[], :jar])
+
+    Fetcher::BrowserSession.with_page("https://old.reddit.com/r/x") { |_p| :ok }
+
+    assert_equal 15, @page.timeout_during_goto,
+                 "Reddit deve usar goto_limit de 15s"
+
+    @page2 = FakePage.new
+    @context2 = FakeContext.new(@page2)
+    Fetcher::PageFetcher.stubs(:browser).returns(FakeBrowser.new(@context2))
+    Fetcher::SessionCookies.stubs(:for).with("x.com").returns([[], :jar])
+
+    Fetcher::BrowserSession.with_page("https://x.com/someuser") { |_p| :ok }
+
+    assert_equal Fetcher::PageFetcher::GOTO_TIMEOUT, @page2.timeout_during_goto,
+                 "host comum deve usar goto_limit de #{Fetcher::PageFetcher::GOTO_TIMEOUT}s"
+  end
+
+  test "with_page nao emite setUserAgentOverride para host nao-reddit" do
+    Fetcher::SessionCookies.stubs(:for).with("x.com").returns([[], :jar])
+
+    Fetcher::BrowserSession.with_page("https://x.com/someuser") { |_p| :ok }
+
+    refute @page.commands.any? { |name, _| name == "Network.setUserAgentOverride" },
+           "UA override é SÓ do Reddit — não pode vazar para YouTube/X"
+  end
 end

@@ -247,4 +247,127 @@ class Fetcher::Channels::RedditTest < ActiveSupport::TestCase
     assert_equal "2026-08-10T12:00:00+00:00", c["posted_at"]
     assert_equal "Comentário com data.", c["body"]
   end
+
+  # A página de bloqueio do Reddit ("whoa there, pardner ... blocked due to a
+  # network policy") carrega com HTTP 200 e o SEARCH_JS devolve "[]" — que o
+  # parser lê como "busca sem resultado". Isso PRECISA virar SearchFailed nomeando
+  # o bloqueio (e sem esperar os 35s), nunca uma lista vazia que o modelo
+  # interpreta como "não existe nada sobre isso".
+  class FakeBlockedPage
+    def evaluate(js)
+      # SEARCH_JS contém "querySelectorAll" — o evaluate do innerText
+      # ("document.body ? document.body.innerText : ''") não contém.
+      # NÃO usa "innerText" para discriminar: SEARCH_JS também contém
+      # "innerText" (função txt(el) na linha 147 do reddit.rb).
+      return "[]" if js.to_s.include?("querySelectorAll")
+
+      "whoa there, pardner... your request has been blocked due to a network policy"
+    end
+  end
+
+  test "pagina de bloqueio do Reddit vira SearchFailed com 'blocked by network policy' e nunca lista vazia" do
+    erro = assert_raises(Fetcher::Channels::Reddit::SearchFailed) do
+      Fetcher::Channels::Reddit.from_search_page(page: FakeBlockedPage.new, limit: 5)
+    end
+
+    assert_equal "Reddit bloqueou a leitura (politica de rede)", erro.message
+  end
+
+  # ── Achado 1 do perito (r2): caminho de LEITURA também precisa detectar
+  # página de bloqueio. O EXTRACT_JS devolve um hash com title="" e comments=[]
+  # na página de bloqueio — que se parece com uma thread legítima sem conteúdo.
+  #
+  # Fake que simula a página de bloqueio: responde com hash vazio quando o JS
+  # é o EXTRACT_JS (que contém "querySelector"), e texto de bloqueio para o
+  # evaluate("document.body?...") que o from_page faz para detectar bloqueio.
+  # NÃO usa .include?("innerText") para discriminar — o próprio EXTRACT_JS
+  # contém "innerText" (função txt(el) na linha 92 do reddit.rb).
+  class FakeBlockedThreadPage < FakePage
+    def initialize
+      super(JSON.generate({
+        "title" => "", "subreddit" => "", "author" => "",
+        "score" => nil, "selftext" => "", "comments" => []
+      }))
+    end
+
+    def evaluate(js)
+      if js.to_s.include?("querySelector")
+        @json
+      else
+        "whoa there, pardner... your request has been blocked due to a network policy"
+      end
+    end
+  end
+
+  # O caminho de LEITURA (from_page) hoje passa página de bloqueio como thread
+  # legítima: o EXTRACT_JS devolve um hash vazio, build() monta um resultado com
+  # title="" e 0 comentários — o modelo recebe "thread sem conteúdo" em vez de
+  # erro. Precisa detectar o bloqueio e levantar PageFailed nomeando-o.
+  test "from_page detecta pagina de bloqueio e levanta PageFailed nomeando o bloqueio (Achado 1)" do
+    erro = assert_raises(Fetcher::Channels::Reddit::PageFailed) do
+      Fetcher::Channels::Reddit.from_page(
+        page: FakeBlockedThreadPage.new,
+        url: "https://old.reddit.com/r/brasil/comments/xyz/t/"
+      )
+    end
+
+    assert_equal "Reddit bloqueou a leitura (politica de rede)", erro.message
+  end
+
+  # Mesmo para from_thread_comments_page: o EXTRACT_JS devolve hash vazio,
+  # build_thread_components monta resultado vazio — precisa detectar bloqueio.
+  test "from_thread_comments_page detecta pagina de bloqueio e levanta PageFailed (Achado 1)" do
+    erro = assert_raises(Fetcher::Channels::Reddit::PageFailed) do
+      Fetcher::Channels::Reddit.from_thread_comments_page(
+        page: FakeBlockedThreadPage.new,
+        url: "https://old.reddit.com/r/brasil/comments/xyz/t/"
+      )
+    end
+
+    assert_equal "Reddit bloqueou a leitura (politica de rede)", erro.message
+  end
+
+  # Thread REAL com título válido e comentários NÃO deve ser afetada pelo
+  # cheque de bloqueio — regressão: um post com "" visível como título não
+  # pode virar PageFailed.
+  # Double discrimina por "querySelector" (EXTRACT_JS) — NÃO por
+  # "innerText", porque o próprio EXTRACT_JS contém "innerText" (reddit.rb:92).
+  test "thread real com titulo valido NAO e bloqueio mesmo que tenha innerText limpo (regressao)" do
+    payload_real = {
+      "title" => "Titulo real", "subreddit" => "ruby", "author" => "alguem",
+      "score" => 100, "selftext" => "texto", "comments" => [
+        { "author" => "a", "score" => 5, "depth" => 0, "body" => "comentario" }
+      ]
+    }
+    page = FakePage.new(JSON.generate(payload_real))
+    page.define_singleton_method(:evaluate) do |js|
+      js.to_s.include?("querySelector") ? @json : "conteudo normal sem bloqueio"
+    end
+
+    result = Fetcher::Channels::Reddit.from_page(page: page, url: "https://old.reddit.com/r/ruby/comments/a/b/")
+    assert_equal "Titulo real", result[:title]
+  end
+
+  # Hash vazio SEM marcador de bloqueio no innerText TAMBÉM levanta PageFailed:
+  # o bloqueador é o blocked_hash?, a sonda de innerText só enriquece a mensagem.
+  # Nunca pode cair em build() com thread vazia.
+  class FakeEmptyPage
+    def evaluate(js)
+      js.to_s.include?("querySelector") ? JSON.generate(
+        "title" => "", "subreddit" => "", "author" => "",
+        "score" => nil, "selftext" => "", "comments" => []
+      ) : "conteudo generico sem marcador de bloqueio"
+    end
+  end
+
+  test "hash vazio sem marcador de bloqueio levanta PageFailed (nao cai em build)" do
+    erro = assert_raises(Fetcher::Channels::Reddit::PageFailed) do
+      Fetcher::Channels::Reddit.from_page(
+        page: FakeEmptyPage.new,
+        url: "https://old.reddit.com/r/brasil/comments/xyz/t/"
+      )
+    end
+    assert_match(/ilegível|seletor/i, erro.message,
+                 "deve usar a mensagem padrao (sem razao nomeada)")
+  end
 end

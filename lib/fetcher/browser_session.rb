@@ -36,6 +36,27 @@ module Fetcher
     # abaixo dos 90s do plugin do reader. Mexer num exige manter a ordem.
     OVERALL_TIMEOUT = 35
 
+    # Chrome do app é a imagem chromedp/headless-shell — anuncia UA
+    # `HeadlessChrome/1xx`. O Reddit bloqueia essa assinatura (mesmos cookies,
+    # mesmo IP: UA normal = resultados, UA HeadlessChrome = página "whoa there,
+    # pardner"). Corrigido com `Network.setUserAgentOverride` SÓ para hosts
+    # reddit — nunca no UA global, que mudaria o comportamento medido do
+    # YouTube/X. O host `old.reddit.com` é o SEARCH_HOST do canal Reddit; o
+    # prefixo `reddit.com` cobre URLs que o canal reescreve para old.
+    # Regex: casa `reddit.com` e qualquer subdomínio (old.reddit.com,
+    # www.reddit.com, br.reddit.com), rejeita youtube.com, x.com.
+    REDDIT_HOSTS = /(^|\.)reddit\.com\z/i.freeze
+
+    # UA determinístico de Chrome/Windows para o Reddit (Achado 3 do perito):
+    # ANTES usava `FerumConfig.random_user_agent` que sorteava entre 4 UAs
+    # (3 não-Windows) — platform fixo "Win32" contra UA macOS/Safari dava
+    # fingerprint incoerente e prova não-determinística. Agora é UM só,
+    # Chrome 131 no Windows, com platform Win32.
+    REDDIT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " \
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " \
+                        "Chrome/131.0.0.0 Safari/537.36".freeze
+    REDDIT_PLATFORM   = "Win32".freeze
+
     class RenderTimeout < Channels::Error
       def initialize(msg = nil)
         super(msg || "tempo de render excedeu #{OVERALL_TIMEOUT}s")
@@ -84,18 +105,41 @@ module Fetcher
                 end
 
                 inject_cookies(page, cookies, host)
+                apply_reddit_user_agent!(page, host)
 
                 original_timeout = (page.timeout rescue nil)
                 begin
-                  page.timeout = PageFetcher::GOTO_TIMEOUT if page.respond_to?(:timeout=)
+                  # Timeout de navegação reduzido para Reddit (vs geral 20s):
+                  # a página de bloqueio volta rápido (< 1s) mesmo se o status
+                  # real não foi medido, e com UA real a busca carrega em ~6s.
+                  # O timeout é restaurado ANTES do `yield`, então a extração JS
+                  # da thread (mais pesada) não fica limitada a 15s.
+                  goto_limit = host.match?(REDDIT_HOSTS) ? 15 : PageFetcher::GOTO_TIMEOUT
+                  page.timeout = goto_limit if page.respond_to?(:timeout=)
                   # Assinante ANTES do go_to: é o que captura o remoteIPAddress do
                   # documento principal, para o cheque de rebinding abaixo.
                   remote_ip = RebindingGuard.capture_document_remote_ip(page) do
+                    # Instrumentação de diagnóstico só para Reddit (Achado 4):
+                    # nos outros canais (YouTube, X) cada evaluate extra custa
+                    # tempo de CDP e arrisca pendurar em página de erro.
+                    if host.match?(REDDIT_HOSTS)
+                      t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+                      Rails.logger.info "[Fetcher::BrowserSession:diag] navegando host=#{host} " \
+                                     "goto_limit=#{goto_limit}s timeout_efetivo=#{page.timeout rescue '?'}"
+                    end
                     begin
                       page.go_to(uri.to_s)
                     rescue Ferrum::TimeoutError, Ferrum::PendingConnectionsError
                       body_check = (page.evaluate("document.body ? document.body.innerText : ''") rescue "").to_s.strip
                       raise RenderTimeout if body_check.empty?
+                    ensure
+                      if host.match?(REDDIT_HOSTS)
+                        t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+                        status = (page.network.response&.status rescue nil)
+                        url_final = (page.current_url rescue nil) || uri.to_s
+                        Rails.logger.info "[Fetcher::BrowserSession:diag] navegou " \
+                                       "duracao=#{(t1 - t0).round(3)}s status=#{status} url_final=#{url_final}"
+                      end
                     end
                   end
                 ensure
@@ -210,6 +254,50 @@ module Fetcher
             page.cookies.set(opts)
           end
         end
+      end
+
+      # Override por-página, emitido ANTES do `go_to` — precisa valer já na
+      # primeira requisição (a que o Reddit inspeciona). Não toca o perfil
+      # persistente do Chrome nem o UA de outros canais.
+      #
+      # O Network.setUserAgentOverride via chamada CRUA ao CDP é a via certa
+      # (Achado 2 do perito): page.user_agent= não existe no Ferrum;
+      # page.headers dispara Network.setExtraHTTPHeaders como efeito
+      # colateral, e o platform: do Headers é descartado por um bug em
+      # ferrum-0.17.2 (headers.rb:73) — impossível setar platform por ali.
+      # O Ferrum já emite Network.enable por conta própria em prepare_page
+      # (sem argumentos) antes de qualquer comando; re-emitir aqui com
+      # buffers zerados quebraria page.body. Por isso NÃO chamamos
+      # Network.enable — só o setUserAgentOverride.
+      #
+      # Este override vive AQUI e não em PageFetcher#render_via_ferrum porque
+      # SÓ o canal Reddit precisa dele (YouTube, X e página genérica usam o
+      # UA padrão do headless-shell e funcionam). O regex REDDIT_HOSTS cobre
+      # old.reddit.com (SEARCH_HOST do canal) e outros subdomínios reddit que
+      # podem chegar pelo canal de thread (call/thread_comments). URLs que
+      # old_reddit_url rejeita (perfil, /r/x/top) caem no ExtractService contra
+      # www.reddit.com SEM o override — é uma limitação conhecida: o UA real
+      # nesses casos depende de o ExtractService encaminhar para um canal
+      # (hoje não) ou o Reddit não bloquear www.reddit.com sem override
+      # (não testado).
+      #
+      # `platform:` é "Win32" (coerente com o REDDIT_USER_AGENT Windows).
+      # `acceptLanguage:` pt-BR para não enviar o en-US padrão do headless-shell.
+      # Se a sessão CDP morrer exatamente no setUserAgentOverride (caso raro mas
+      # observado: a sonda de `alive?` não garante a vida até o próximo comando),
+      # o rescue evita que a exceção crua suba — o canal cai no erro nomeado normal
+      # (`RenderTimeout` ou `SsrfGuard::Blocked`) na navegação seguinte.
+      def apply_reddit_user_agent!(page, host)
+        return unless host.match?(REDDIT_HOSTS)
+
+        page.command("Network.setUserAgentOverride",
+          userAgent:      REDDIT_USER_AGENT,
+          acceptLanguage: "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+          platform:       REDDIT_PLATFORM)
+      rescue *PageFetcher::DEAD_SESSION_ERRORS, Ferrum::Error => e
+        Rails.logger.warn "[Fetcher::BrowserSession] UA override falhou " \
+                          "(#{e.class}: #{e.message}) — sessão CDP morreu, " \
+                          "a navegação deve falhar em seguida"
       end
 
       def persist_rotation(page, host)
