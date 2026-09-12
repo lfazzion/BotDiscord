@@ -270,7 +270,7 @@ class Fetcher::Channels::RedditTest < ActiveSupport::TestCase
       Fetcher::Channels::Reddit.from_search_page(page: FakeBlockedPage.new, limit: 5)
     end
 
-    assert_match(/blocked|network policy/i, erro.message)
+    assert_equal "Reddit bloqueou a leitura (politica de rede)", erro.message
   end
 
   # ── Achado 1 do perito (r2): caminho de LEITURA também precisa detectar
@@ -311,7 +311,7 @@ class Fetcher::Channels::RedditTest < ActiveSupport::TestCase
       )
     end
 
-    assert_match(/blocked|network policy|bloqueado/i, erro.message)
+    assert_equal "Reddit bloqueou a leitura (politica de rede)", erro.message
   end
 
   # Mesmo para from_thread_comments_page: o EXTRACT_JS devolve hash vazio,
@@ -324,7 +324,7 @@ class Fetcher::Channels::RedditTest < ActiveSupport::TestCase
       )
     end
 
-    assert_match(/blocked|network policy|bloqueado/i, erro.message)
+    assert_equal "Reddit bloqueou a leitura (politica de rede)", erro.message
   end
 
   # Thread REAL com título válido e comentários NÃO deve ser afetada pelo
